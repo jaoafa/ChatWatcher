@@ -3,6 +3,7 @@ package com.jaoafa.chatwatcher.lib;
 import com.jaoafa.chatwatcher.Main;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.Guild;
+import net.dv8tion.jda.api.entities.MessageChannel;
 import net.dv8tion.jda.api.entities.TextChannel;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -43,11 +44,11 @@ public class ServerManager {
         return getServer(guild) != null;
     }
 
-    public static void addTextChannel(Guild guild, TextChannel channel) {
+    public static void addMessageChannel(Guild guild, MessageChannel channel) {
         if (!isRegistered(guild)) {
             throw new IllegalArgumentException("Guild is not registered.");
         }
-        getServer(guild).addTextChannel(channel);
+        getServer(guild).addMessageChannel(channel);
         save();
     }
 
@@ -87,32 +88,32 @@ public class ServerManager {
 
     static class Server {
         private Guild guild;
-        private List<TextChannel> textChannels = new ArrayList<>();
+        private List<MessageChannel> MessageChannels = new ArrayList<>();
 
         public Server(Guild guild) {
             this.guild = guild;
         }
 
-        protected void addTextChannel(TextChannel channel) {
-            textChannels.add(channel);
+        protected void addMessageChannel(MessageChannel channel) {
+            MessageChannels.add(channel);
         }
 
-        protected void removeTextChannel(TextChannel channel) {
-            textChannels.remove(channel);
+        protected void removeMessageChannel(MessageChannel channel) {
+            MessageChannels.remove(channel);
         }
 
         public Guild getGuild() {
             return guild;
         }
 
-        public List<TextChannel> getTextChannels() {
-            return textChannels;
+        public List<MessageChannel> getMessageChannels() {
+            return MessageChannels;
         }
 
         public String serialize() {
             JSONObject object = new JSONObject();
             object.put("guild_id", guild.getId());
-            object.put("text_channel_ids", textChannels.stream().map(TextChannel::getId).toArray());
+            object.put("text_channel_ids", MessageChannels.stream().map(MessageChannel::getId).toArray());
             return object.toString();
         }
 
@@ -125,16 +126,18 @@ public class ServerManager {
 
             Server server = new Server(guild);
             server.guild = guild;
-            List<TextChannel> textChannels = new ArrayList<>();
-            JSONArray textChannelIds = object.getJSONArray("text_channel_ids");
-            for (int i = 0; i < textChannelIds.length(); i++) {
-                TextChannel textChannel = guild.getTextChannelById(textChannelIds.getString(i));
-                if (textChannel == null) {
-                    throw new IllegalArgumentException("TextChannel is null.");
+            List<MessageChannel> MessageChannels = new ArrayList<>();
+            JSONArray MessageChannelIds = object.getJSONArray("text_channel_ids");
+            for (int i = 0; i < MessageChannelIds.length(); i++) {
+                TextChannel textChannel = guild.getTextChannelById(MessageChannelIds.getString(i));
+
+                MessageChannel MessageChannel = textChannel != null ? textChannel : guild.getThreadChannelById(MessageChannelIds.getString(i));
+                if (MessageChannel == null) {
+                    throw new IllegalArgumentException("MessageChannel is null.");
                 }
-                textChannels.add(textChannel);
+                MessageChannels.add(MessageChannel);
             }
-            server.textChannels = textChannels;
+            server.MessageChannels = MessageChannels;
             return server;
         }
     }

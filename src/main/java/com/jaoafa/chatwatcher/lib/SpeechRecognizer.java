@@ -1,7 +1,7 @@
 package com.jaoafa.chatwatcher.lib;
 
 import net.dv8tion.jda.api.entities.Guild;
-import net.dv8tion.jda.api.entities.TextChannel;
+import net.dv8tion.jda.api.entities.MessageChannel;
 import net.dv8tion.jda.api.entities.User;
 import okhttp3.*;
 import org.json.JSONObject;
@@ -57,7 +57,7 @@ public class SpeechRecognizer extends Thread {
             if (server == null) {
                 return;
             }
-            for (TextChannel channel : server.getTextChannels()) {
+            for (MessageChannel channel : server.getMessageChannels()) {
                 channel.sendMessage("`%s`: `%s` (%.2f%%)".formatted(user.getAsTag(), result.text, result.confidence)).queue();
             }
         } catch (IOException e) {
