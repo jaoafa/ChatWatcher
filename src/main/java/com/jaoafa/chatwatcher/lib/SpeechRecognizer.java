@@ -1,5 +1,8 @@
 package com.jaoafa.chatwatcher.lib;
 
+import net.dv8tion.jda.api.entities.Guild;
+import net.dv8tion.jda.api.entities.TextChannel;
+import net.dv8tion.jda.api.entities.User;
 import okhttp3.*;
 import org.json.JSONObject;
 
@@ -8,9 +11,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 public class SpeechRecognizer extends Thread {
+    private final Guild guild;
+    private final User user;
     Path path;
 
-    public SpeechRecognizer(Path path) {
+    public SpeechRecognizer(Guild guild, User user, Path path) {
+        this.guild = guild;
+        this.user = user;
         this.path = path;
     }
 
@@ -37,14 +44,22 @@ public class SpeechRecognizer extends Thread {
                     }
                     JSONObject obj = new JSONObject(body.string());
                     if (obj.has("error")) {
-                        System.out.println("[SpeechRecognizer] Error: " + obj.getString("error"));
+                        Utils.println("❌ %s failed to recognize: %s".formatted(user.getAsTag(), obj.getString("error")));
                         return;
                     }
                     result = new Result(obj.getString("text"), obj.has("confidence") ? Math.floor(obj.getDouble("confidence") * 100) : null);
                 }
             }
 
-            System.out.println("[SpeechRecognizer] " + result.text + " (" + result.confidence + ")");
+            Utils.println("✅ %s recognized!: %s (%s%%)".formatted(user.getAsTag(), result.text, result.confidence));
+
+            ServerManager.Server server = ServerManager.getServer(guild);
+            if (server == null) {
+                return;
+            }
+            for (TextChannel channel : server.getTextChannels()) {
+                channel.sendMessage("`%s`: `%s` (%.2f%%)".formatted(user.getAsTag(), result.text, result.confidence)).queue();
+            }
         } catch (IOException e) {
             e.printStackTrace();
         }

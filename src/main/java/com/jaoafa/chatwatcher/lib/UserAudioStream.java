@@ -1,27 +1,28 @@
 package com.jaoafa.chatwatcher.lib;
 
+import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.User;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Collections;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
 public class UserAudioStream {
     static Map<String, UserAudioStream> userAudioStreams = new HashMap<>();
 
+    private final Guild guild;
     private final User user;
     private final Path path;
     private final long startedRecordedAt;
     private long lastRecordedAt;
 
-    private UserAudioStream(User user) {
+    private UserAudioStream(Guild guild, User user) {
+        this.guild = guild;
         this.user = user;
         this.startedRecordedAt = System.currentTimeMillis();
-        this.path = Path.of("UserAudioStreams/%s-%d.cw".formatted(user.getId(), startedRecordedAt));
+        this.path = Path.of(PathEnums.UserAudioStreams.toString(), "%s-%d.cw".formatted(user.getId(), startedRecordedAt));
 
         try {
             if (!Files.exists(this.path.getParent())) {
@@ -32,11 +33,11 @@ public class UserAudioStream {
         }
     }
 
-    public static UserAudioStream of(User user) {
-        if (userAudioStreams.containsKey(user.getId())) {
-            return userAudioStreams.get(user.getId());
+    public static UserAudioStream of(Guild guild, User user) {
+        if (userAudioStreams.containsKey(guild.getId() + "-" + user.getId())) {
+            return userAudioStreams.get(guild.getId() + "-" + user.getId());
         }
-        UserAudioStream userAudioStream = new UserAudioStream(user);
+        UserAudioStream userAudioStream = new UserAudioStream(guild, user);
         userAudioStream.save();
         return userAudioStream;
     }
@@ -44,7 +45,7 @@ public class UserAudioStream {
     public void record(byte[] data) {
         try {
             if (!Files.exists(this.path)) {
-                System.out.println("UserAudioStream.record: " + this.path + " does not exist. Creating...");
+                Utils.println("\uD83D\uDCAC %s starts speaking...".formatted(this.user.getAsTag()));
                 Files.write(this.path, data);
                 return;
             }
@@ -64,11 +65,15 @@ public class UserAudioStream {
     }
 
     public void save() {
-        userAudioStreams.put(user.getId(), this);
+        userAudioStreams.put(guild.getId() + "-" + user.getId(), this);
     }
 
-    public void destroy() {
-        userAudioStreams.remove(user.getId());
+    public static void remove(UserAudioStream stream) {
+        userAudioStreams.remove(stream.getGuild().getId() + "-" + stream.getUser().getId());
+    }
+
+    public Guild getGuild() {
+        return guild;
     }
 
     public User getUser() {
@@ -88,7 +93,7 @@ public class UserAudioStream {
     }
 
     public static Map<String, UserAudioStream> getStreams() {
-        return Collections.unmodifiableMap(userAudioStreams);
+        return userAudioStreams;
     }
 
     @Override
@@ -96,8 +101,8 @@ public class UserAudioStream {
         return "UserAudioStream{" +
             "user=" + user.getAsTag() +
             ", path=" + path +
-            ", startedRecordedAt=" + new Date(startedRecordedAt) +
-            ", lastRecordedAt=" + new Date(lastRecordedAt) +
+            ", startedRecordedAt=" + startedRecordedAt +
+            ", lastRecordedAt=" + lastRecordedAt + " (" + (System.currentTimeMillis() - getLastRecordedAt()) + ")" +
             '}';
     }
 }

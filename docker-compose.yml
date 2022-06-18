@@ -8,6 +8,7 @@ services:
       - PATH_RECORDED=/data/audio-files/
     volumes:
       - audio-files:/data/audio-files/
+      - ./settings/:/app/settings/
 
   speech-recognition:
     build: ./speech-recognition
