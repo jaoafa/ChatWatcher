@@ -1,0 +1,20 @@
+version: '3.8'
+services:
+  app:
+    build: ./
+    environment:
+      - API_HOST=speech-recognition
+      - API_PORT=8080
+      - PATH_RECORDED=/data/audio-files/
+    volumes:
+      - audio-files:/data/audio-files/
+
+  speech-recognition:
+    build: ./speech-recognition
+    environment:
+      - PORT=8080
+    volumes:
+      - audio-files:/data/audio-files/
+
+volumes:
+  audio-files:
