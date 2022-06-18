@@ -12,7 +12,7 @@ FROM openjdk:17-alpine
 WORKDIR /app
 
 COPY --from=builder /build/target/ChatWatcher-jar-with-dependencies.jar .
-COPY target/config.json .
+COPY config.json .
 
 ENTRYPOINT []
 CMD ["java", "-jar", "ChatWatcher-jar-with-dependencies.jar"]

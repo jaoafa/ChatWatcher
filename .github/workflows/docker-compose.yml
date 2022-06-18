@@ -12,5 +12,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v3
 
+      - name: Create dummy config.json
+        run: echo '{}' > config.json
+
       - name: Build the Docker Compose
         run: docker-compose build
