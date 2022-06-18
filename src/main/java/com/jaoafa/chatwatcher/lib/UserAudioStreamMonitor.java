@@ -11,8 +11,12 @@ public class UserAudioStreamMonitor extends TimerTask {
 
     @Override
     public void run() {
-        for (Map.Entry<String, UserAudioStream> entry : UserAudioStream.getStreams().entrySet()) {
-            new UserAudioStreamProcessor(entry.getKey(), entry.getValue()).start();
+        try {
+            for (Map.Entry<String, UserAudioStream> entry : UserAudioStream.getStreams().entrySet()) {
+                new UserAudioStreamProcessor(entry.getKey(), entry.getValue()).start();
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 }
