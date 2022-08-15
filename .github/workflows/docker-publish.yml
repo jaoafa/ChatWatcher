@@ -19,7 +19,7 @@ jobs:
 
     strategy:
       matrix:
-        directory: [watcher, recognizer, cert]
+        directory: [watcher, recognizer, web, cert]
 
     steps:
       - name: Check out the repo

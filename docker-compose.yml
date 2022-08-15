@@ -1,8 +1,8 @@
 version: "3.8"
 
 services:
-  chatwatcher:
-    image: ghcr.io/jaoafa/ChatWatcher-watcher:latest
+  watcher:
+    image: ghcr.io/jaoafa/chatwatcher-watcher:latest
     volumes:
       - type: bind
         source: ./config.json
@@ -18,7 +18,7 @@ services:
     restart: always
 
   web:
-    image: ghcr.io/jaoafa/ChatWatcher-web:latest
+    image: ghcr.io/jaoafa/chatwatcher-web:latest
     environment:
       NGINX_SERVER_NAME: web
       NGINX_HSTS_MAX_AGE: 31536000
@@ -32,7 +32,7 @@ services:
     restart: always
 
   cert:
-    image: ghcr.io/jaoafa/ChatWatcher-cert:latest
+    image: ghcr.io/jaoafa/chatwatcher-cert:latest
     build:
       context: ./web
       dockerfile: ./cert.Dockerfile
