@@ -33,9 +33,6 @@ services:
 
   cert:
     image: ghcr.io/jaoafa/chatwatcher-cert:latest
-    build:
-      context: ./web
-      dockerfile: ./cert.Dockerfile
     environment:
       DOMAIN: web
     volumes:
