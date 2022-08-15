@@ -28,16 +28,14 @@ services:
     volumes:
       - certs:/etc/ssl/certs/nginx:ro,cached
     depends_on:
-      certs:
+      cert:
         condition: service_completed_successfully
     networks:
       - chatwatcher-network
     restart: always
 
-  certs:
-    build:
-      context: ./web
-      dockerfile: ./cert.Dockerfile
+  cert:
+    build: ./cert
     environment:
       DOMAIN: web
     volumes:
