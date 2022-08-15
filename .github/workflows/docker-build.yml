@@ -16,4 +16,4 @@ jobs:
       - uses: actions/checkout@v3
       - name: Build the Docker image
         working-directory: ${{ matrix.directory }}
-        run: docker build . --file Dockerfile --tag ${{ github.event.repository.name }}-${{ matrix.directory }}:$(date +%s)
+        run: docker build . --file Dockerfile --tag ${GITHUB_REPOSITORY,,}-${{ matrix.directory }}:$(date +%s)
