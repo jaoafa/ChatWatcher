@@ -14,7 +14,7 @@ env:
 
 jobs:
   publish:
-    name: Push Docker image to ${{ env.REGISTRY }} (${{ matrix.directory }})
+    name: Push Docker image (${{ matrix.directory }})
     runs-on: ubuntu-latest
 
     strategy:
