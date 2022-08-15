@@ -103,7 +103,7 @@ public class SpeechRecognizeContainer {
             "RECOGNIZER_HEADLESS=" + headless,
             "--net=chatwatcher-network",
             "-it",
-            "chatwatcher-recognizer"
+            "ghcr.io/jaoafa/chatwatcher-recognizer"
         };
         pb.command("/bin/sh", "-c", String.join(" ", command));
         pb.redirectOutput(ProcessBuilder.Redirect.INHERIT);
