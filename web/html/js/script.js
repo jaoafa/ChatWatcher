@@ -76,7 +76,7 @@ function getRoomId() {
   return url.searchParams.get("roomId");
 }
 function connect() {
-  socket = io.connect("ws://chatwatcher:9092");
+  socket = io.connect("ws://watcher:9092");
   socket.emit("join", getRoomId());
   socket.on("audio", function (file) {
     console.log("audio event");

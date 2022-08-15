@@ -9,4 +9,7 @@ pacmd set-default-source VirtualMic
 
 pacmd load-module module-native-protocol-unix socket=/tmp/pulseaudio.socket
 
+Xvfb :99 -ac -screen 0 1280x1024x16 -listen tcp &
+x11vnc -forever -noxdamage -display :99 &
+
 yarn build

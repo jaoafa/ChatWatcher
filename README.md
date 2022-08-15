@@ -71,3 +71,5 @@ sequenceDiagram
 ## その他
 
 - 文字起こしコンテナが残った場合: `docker rm $(docker ps -f "name=chatwatcher-recognizer" -q -a)`
+- 文字起こしコンテナを別で立ち上げる場合: `docker run --rm --name chatwatcher-recognizer -p 5900:5900 -e DISPLAY=:99 -e RECOGNIZER_HEADLESS=false -e CHATWATCHER_ROOM_ID=597378876556967936-271615744947650562 --net=chatwatcher-network ghcr.io/jaoafa/chatwatcher-recognizer`
+  - VNC で `localhost:5900` にアクセスして画面を確認できる

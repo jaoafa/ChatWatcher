@@ -14,6 +14,11 @@ RUN apk update && \
   ttf-freefont \
   nodejs \
   yarn \
+  xvfb \
+  xauth \
+  dbus \
+  dbus-x11 \
+  x11vnc \
   pulseaudio \
   pulseaudio-utils && \
   apk add --update --no-cache tzdata && \
@@ -37,6 +42,9 @@ COPY entrypoint.sh .
 RUN chmod +x entrypoint.sh
 
 USER speech-recognizer:speech-recognizer
+
+ENV RECOGNIZER_HEADLESS false
+ENV DISPLAY :99
 
 ENTRYPOINT ["dumb-init", "--"]
 CMD ["/app/entrypoint.sh"]

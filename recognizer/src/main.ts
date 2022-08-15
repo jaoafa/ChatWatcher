@@ -24,7 +24,7 @@ async function main() {
       "--disable-gpu",
       "--ignore-certificate-errors",
       "--allow-running-insecure-content",
-      "--window-size=300,300",
+      "--window-size=1280,1024",
     ],
     ignoreDefaultArgs: ["--mute-audio"],
   };
