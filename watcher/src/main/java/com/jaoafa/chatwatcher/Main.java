@@ -29,12 +29,6 @@ public class Main extends ListenerAdapter {
     private static SocketIOServer socketIOServer;
 
     public static void main(String[] args) {
-        String headless = System.getenv("RECOGNIZER_HEADLESS");
-        if (headless == null) {
-            headless = "true";
-        }
-        System.out.println("[INFO] Headless mode is " + headless + ".");
-
         try {
             JSONObject config = new JSONObject(Files.readString(Path.of("config.json")));
             jda = JDABuilder.createDefault(config.getString("token"), EnumSet.of(

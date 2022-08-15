@@ -77,16 +77,6 @@ public class SpeechRecognizeContainer {
     }
 
     private static void containerUp(int containerId, String roomId) throws RuntimeException, IOException, InterruptedException {
-        String headless = System.getenv("RECOGNIZER_HEADLESS");
-        if (headless == null) {
-            headless = "true";
-        }
-
-        if(headless.equals("false") && System.getenv("RECOGNIZER_DISPLAY") == null){
-            System.out.println("[ERROR] RECOGNIZER_DISPLAY が定義されていません。ヘッドレスモードで起動します。");
-            headless = "true";
-        }
-
         ProcessBuilder pb = new ProcessBuilder();
         String[] command = {
             dockerPath,
@@ -97,10 +87,10 @@ public class SpeechRecognizeContainer {
             "chatwatcher-recognizer-" + containerId,
             "-e",
             "CHATWATCHER_ROOM_ID=" + roomId,
-            headless.equals("false") ? "-e" : "",
-            headless.equals("false") ? "DISPLAY=" + System.getenv("RECOGNIZER_DISPLAY") : "",
             "-e",
-            "RECOGNIZER_HEADLESS=" + headless,
+            "DISPLAY=" + (System.getenv("RECOGNIZER_DISPLAY") !== null ? System.getenv("RECOGNIZER_DISPLAY") : ":99"),
+            "-e",
+            "RECOGNIZER_HEADLESS=false",
             "--net=chatwatcher-network",
             "-it",
             "ghcr.io/jaoafa/chatwatcher-recognizer"

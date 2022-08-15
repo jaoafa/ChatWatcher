@@ -43,7 +43,6 @@ RUN chmod +x entrypoint.sh
 
 USER speech-recognizer:speech-recognizer
 
-ENV RECOGNIZER_HEADLESS false
 ENV DISPLAY :99
 
 ENTRYPOINT ["dumb-init", "--"]
