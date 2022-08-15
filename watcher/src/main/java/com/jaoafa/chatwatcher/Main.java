@@ -98,7 +98,8 @@ public class Main extends ListenerAdapter {
             boolean isFinal = data.getBoolean("isFinal");
 
             String userTag = UserCache.get(userId);
-            String content = "`" + userTag + "`: `" + result + "` (" + percent + "%)";
+            String emoji = isFinal ? ":green_circle:" : ":red_circle:";
+            String content = emoji + "`" + userTag + "`: `" + result + "` (" + percent + "%)";
 
             String previous = SpeechRecognizeCache.get(roomId);
             if (previous != null && previous.equals(result) && !isFinal) {
