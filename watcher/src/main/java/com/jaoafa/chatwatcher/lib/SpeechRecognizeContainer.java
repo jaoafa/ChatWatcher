@@ -88,7 +88,7 @@ public class SpeechRecognizeContainer {
             "-e",
             "CHATWATCHER_ROOM_ID=" + roomId,
             "-e",
-            "DISPLAY=" + (System.getenv("RECOGNIZER_DISPLAY") !== null ? System.getenv("RECOGNIZER_DISPLAY") : ":99"),
+            "DISPLAY=" + (System.getenv("RECOGNIZER_DISPLAY") != null ? System.getenv("RECOGNIZER_DISPLAY") : ":99"),
             "-e",
             "RECOGNIZER_HEADLESS=false",
             "--net=chatwatcher-network",
