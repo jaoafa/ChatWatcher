@@ -20,8 +20,8 @@ public class RecognizeThread implements Runnable {
     @Override
     public void run() {
         try {
-            AudioFormat target = new AudioFormat(16000, 16, 1, true, false);
-            Recognizer recognizer = new Recognizer(Main.getModel(), 16000.0f);
+            AudioFormat target = new AudioFormat(48000.0f, 16, 1, true, false);
+            Recognizer recognizer = new Recognizer(Main.getModel(), 48000.0f);
 
             Map<AudioRecorder.AudioUser, LinkedList<byte[]>> audioData = AudioRecorder.getSpokenAudioData();
             for (Map.Entry<AudioRecorder.AudioUser, LinkedList<byte[]>> entry : audioData.entrySet()) {
