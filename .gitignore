@@ -42,5 +42,4 @@ build/
 ### Mac OS ###
 .DS_Store
 
-config.json
-settings/
+data/
