@@ -1,9 +1,15 @@
-version: '3.8'
+version: "3.8"
 services:
-  app:
-    build: ./
+  recorder:
+    build: ./recorder
     volumes:
       - ./data/:/data/
     init: true
     restart: always
 
+  recognizer:
+    build: ./recognizer
+    volumes:
+      - ./data/:/data/
+    init: true
+    restart: always
