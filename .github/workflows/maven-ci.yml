@@ -6,6 +6,7 @@ on: [ push, pull_request ]
 
 jobs:
   build:
+    name: Build with Maven (${{ matrix.target }})
     runs-on: ${{ matrix.os }}
 
     strategy:
@@ -13,6 +14,7 @@ jobs:
         os: [ ubuntu-latest ]
         java: [ 17 ]
         distribution: [ adopt ]
+        target: [ 'recorder', 'recognizer' ]
 
     steps:
       - uses: actions/checkout@v3
@@ -27,15 +29,16 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          key: ${{ runner.os }}-maven-${{ matrix.target }}-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
-            ${{ runner.os }}-maven-
+            ${{ runner.os }}-maven-${{ matrix.target }}
 
       - name: Build with Maven
+        working-directory: ${{ matrix.target }}
         run: mvn -B package --file pom.xml
 
       - name: Upload artifact
         uses: actions/upload-artifact@v3
         with:
           name: artifact
-          path: target/*.jar
+          path: ${{ matrix.target }}/target/*.jar
