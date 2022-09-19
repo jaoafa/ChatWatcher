@@ -12,7 +12,7 @@ FROM amazoncorretto:17-alpine
 # libstdc++.so.6
 RUN apk update && \
   apk add --no-cache \
-  libstdc++
+  libstdc++ opus
 
 WORKDIR /app
 
