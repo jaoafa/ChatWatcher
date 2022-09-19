@@ -45,6 +45,7 @@ public class RecognizeThread implements Runnable {
                     }
                 }
                 String result = new JSONObject(recognizer.getFinalResult()).getString("text").replaceAll(" ", "");
+                recognizer.close();
                 AudioRecorder.removeSpokenAudioData(uid);
                 if (result.isEmpty()) continue;
 

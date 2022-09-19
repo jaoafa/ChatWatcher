@@ -39,8 +39,12 @@ public class AudioRecorder implements AudioReceiveHandler {
     }
 
     public static Map<AudioUser, LinkedList<byte[]>> getSpokenAudioData() {
+        // 1秒以上話していないユーザー、または10000以上のデータ(10000*20ms/1000/60 = 約3.3分)を持っているユーザー
         return audioData.entrySet().stream()
-                .filter(entry -> System.currentTimeMillis() - lastSpeakTime.get(entry.getKey()) > 1000)
+                .filter(entry ->
+                        (System.currentTimeMillis() - lastSpeakTime.get(entry.getKey()) > 1000) ||
+                                entry.getValue().size() > 10000
+                )
                 .collect(HashMap::new, (map, entry) -> map.put(entry.getKey(), entry.getValue()), HashMap::putAll);
     }
 
