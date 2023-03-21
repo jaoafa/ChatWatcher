@@ -1,46 +1,21 @@
-version: "3.8"
-
+version: '3.8'
 services:
-  watcher:
-    image: ghcr.io/jaoafa/chatwatcher-watcher:latest
-    volumes:
-      - type: bind
-        source: ./config.json
-        target: /app/config.json
-      - type: bind
-        source: ./settings/
-        target: /app/settings/
-      - type: bind
-        source: /var/run/docker.sock
-        target: /var/run/docker.sock
-    networks:
-      - chatwatcher-network
-    restart: always
-
-  web:
-    image: ghcr.io/jaoafa/chatwatcher-web:latest
+  app:
+    build: ./
     environment:
-      NGINX_SERVER_NAME: web
-      NGINX_HSTS_MAX_AGE: 31536000
+      - API_HOST=speech-recognition
+      - API_PORT=8080
+      - PATH_RECORDED=/data/audio-files/
     volumes:
-      - certs:/etc/ssl/certs/nginx:ro,cached
-    depends_on:
-      cert:
-        condition: service_completed_successfully
-    networks:
-      - chatwatcher-network
-    restart: always
+      - audio-files:/data/audio-files/
+      - ./settings/:/app/settings/
 
-  cert:
-    image: ghcr.io/jaoafa/chatwatcher-cert:latest
+  speech-recognition:
+    build: ./speech-recognition
     environment:
-      DOMAIN: web
+      - PORT=8080
     volumes:
-      - certs:/app:delegated
-
-networks:
-  chatwatcher-network:
-    external: true
+      - audio-files:/data/audio-files/
 
 volumes:
-  certs:
+  audio-files:
