@@ -1,10 +1,10 @@
 package com.jaoafa.chatwatcher.command;
 
 import com.jaoafa.chatwatcher.lib.Utils;
-import net.dv8tion.jda.api.entities.AudioChannel;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.GuildVoiceState;
 import net.dv8tion.jda.api.entities.Member;
+import net.dv8tion.jda.api.entities.channel.middleman.AudioChannel;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
 import net.dv8tion.jda.api.interactions.commands.OptionMapping;
 
@@ -20,7 +20,7 @@ public class SummonCmd implements BaseCmd {
             return;
         }
         OptionMapping channelMapping = event.getOption("channel");
-        AudioChannel channel = channelMapping != null ? channelMapping.getAsVoiceChannel() : getConnectedChannel(member);
+        AudioChannel channel = channelMapping != null ? channelMapping.getAsChannel().asVoiceChannel() : getConnectedChannel(member);
         if (channel == null) {
             event.getHook().editOriginal(":x: 接続先のボイスチャンネルを見つけられませんでした。").queue();
             return;

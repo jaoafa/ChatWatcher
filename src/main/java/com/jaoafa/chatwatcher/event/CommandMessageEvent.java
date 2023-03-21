@@ -3,20 +3,17 @@ package com.jaoafa.chatwatcher.event;
 import com.jaoafa.chatwatcher.command.*;
 import com.jaoafa.chatwatcher.lib.ServerManager;
 import net.dv8tion.jda.api.JDA;
-import net.dv8tion.jda.api.entities.ChannelType;
 import net.dv8tion.jda.api.entities.Guild;
-import net.dv8tion.jda.api.events.ReadyEvent;
+import net.dv8tion.jda.api.entities.channel.ChannelType;
 import net.dv8tion.jda.api.events.interaction.command.SlashCommandInteractionEvent;
+import net.dv8tion.jda.api.events.session.ReadyEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
-import net.dv8tion.jda.api.interactions.commands.Command;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.Commands;
 import net.dv8tion.jda.api.interactions.commands.build.OptionData;
 import net.dv8tion.jda.api.interactions.commands.build.SlashCommandData;
 import net.dv8tion.jda.api.interactions.commands.build.SubcommandData;
 
-import javax.annotation.Nonnull;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -53,12 +50,12 @@ public class CommandMessageEvent extends ListenerAdapter {
     );
 
     @Override
-    public void onReady(@Nonnull ReadyEvent event) {
+    public void onReady(ReadyEvent event) {
         registerCommand(event.getJDA());
     }
 
     @Override
-    public void onSlashCommandInteraction(@Nonnull SlashCommandInteractionEvent event) {
+    public void onSlashCommandInteraction(SlashCommandInteractionEvent event) {
         if (!event.isFromGuild()) {
             return;
         }
@@ -86,20 +83,6 @@ public class CommandMessageEvent extends ListenerAdapter {
                 slashCommandData.addSubcommands(registeredSubCommands);
             }
             guild.upsertCommand(slashCommandData).queue();
-        }
-    }
-
-    public static void unregisterCommand(JDA jda) {
-        List<Guild> guilds = jda.getGuilds();
-        List<Command> commands = new ArrayList<>();
-        for (Guild guild : guilds) {
-            commands.addAll(guild.retrieveCommands().complete());
-        }
-        for (Command command : commands) {
-            if (!command.getName().equals("chatwatcher")) {
-                continue;
-            }
-            command.delete().queue();
         }
     }
 }
