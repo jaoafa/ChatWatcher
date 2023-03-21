@@ -1,7 +1,7 @@
 package com.jaoafa.chatwatcher.lib;
 
-import net.dv8tion.jda.api.entities.AudioChannel;
 import net.dv8tion.jda.api.entities.Guild;
+import net.dv8tion.jda.api.entities.channel.middleman.AudioChannel;
 import net.dv8tion.jda.api.managers.AudioManager;
 
 import java.text.SimpleDateFormat;

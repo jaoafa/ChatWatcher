@@ -3,8 +3,8 @@ package com.jaoafa.chatwatcher.lib;
 import com.jaoafa.chatwatcher.Main;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.entities.Guild;
-import net.dv8tion.jda.api.entities.MessageChannel;
-import net.dv8tion.jda.api.entities.TextChannel;
+import net.dv8tion.jda.api.entities.channel.concrete.TextChannel;
+import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -96,10 +96,6 @@ public class ServerManager {
 
         protected void addMessageChannel(MessageChannel channel) {
             MessageChannels.add(channel);
-        }
-
-        protected void removeMessageChannel(MessageChannel channel) {
-            MessageChannels.remove(channel);
         }
 
         public Guild getGuild() {

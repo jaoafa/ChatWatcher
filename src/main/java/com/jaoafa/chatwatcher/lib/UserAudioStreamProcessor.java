@@ -23,7 +23,7 @@ public class UserAudioStreamProcessor extends Thread {
 
     @Override
     public void run() {
-        if (System.currentTimeMillis() - stream.getLastRecordedAt() <= 2000) {
+        if (System.currentTimeMillis() - stream.getLastRecordedAt() <= 1000) {
             return;
         }
         Utils.println("⏩ %s ends speaking. (and saving...): %s%n".formatted(stream.getUser().getName(), uniqId));

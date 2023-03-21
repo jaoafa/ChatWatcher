@@ -8,7 +8,7 @@ import java.util.Locale;
 public enum PathEnums {
     UserAudioStreams("user-audio-streams", PathType.DIRECTORY),
     Recorded("recorded", PathType.DIRECTORY),
-    Servers("settings/servers.json", PathType.FILE),
+    Servers("/data/servers.json", PathType.FILE),
     ;
 
     private final Path directory;

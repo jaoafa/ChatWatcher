@@ -1,8 +1,8 @@
 package com.jaoafa.chatwatcher.lib;
 
 import net.dv8tion.jda.api.entities.Guild;
-import net.dv8tion.jda.api.entities.MessageChannel;
 import net.dv8tion.jda.api.entities.User;
+import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
 import okhttp3.*;
 import org.json.JSONObject;
 

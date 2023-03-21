@@ -5,17 +5,17 @@ services:
     environment:
       - API_HOST=speech-recognition
       - API_PORT=8080
-      - PATH_RECORDED=/data/audio-files/
+      - PATH_RECORDED=/audio-files/
     volumes:
-      - audio-files:/data/audio-files/
-      - ./settings/:/app/settings/
+      - audio-files:/audio-files/
+      - ./data:/data
 
   speech-recognition:
     build: ./speech-recognition
     environment:
       - PORT=8080
     volumes:
-      - audio-files:/data/audio-files/
+      - audio-files:/audio-files/
 
 volumes:
   audio-files:
