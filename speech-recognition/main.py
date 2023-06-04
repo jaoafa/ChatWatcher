@@ -65,7 +65,7 @@ def recognize_whisper(req: ResponseModel):
     with speech_recognition.AudioFile(path) as source:
         audio = r.record(source)
 
-    result = r.recognize_whisper(audio, language='ja', show_dict=True)
+    result = r.recognize_whisper(audio, language='ja')
     try:
         return json.loads(result)
     except:
