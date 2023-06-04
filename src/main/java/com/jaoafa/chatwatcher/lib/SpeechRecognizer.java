@@ -31,7 +31,12 @@ public class SpeechRecognizer extends Thread {
         String url = "http://" + hostname + ":" + port + "/recognize-" + type;
         String result;
         try {
-            OkHttpClient client = new OkHttpClient.Builder().readTimeout(60, TimeUnit.SECONDS).build();
+            OkHttpClient client = new OkHttpClient.Builder()
+                    .connectTimeout(30, TimeUnit.SECONDS)
+                    .callTimeout(30, TimeUnit.SECONDS)
+                    .readTimeout(30, TimeUnit.SECONDS)
+                    .writeTimeout(30, TimeUnit.SECONDS)
+                    .build();
             RequestBody requestBody = RequestBody.create(
                     new JSONObject()
                             .put("path", path.toAbsolutePath().toString())
@@ -58,7 +63,7 @@ public class SpeechRecognizer extends Thread {
             if (isJSONObject(result)) {
                 JSONObject obj = new JSONObject(result);
                 if (obj.has("text")) {
-                    if(obj.getString("text").length() == 0){
+                    if (obj.getString("text").length() == 0) {
                         return;
                     }
                     for (MessageChannel channel : server.getMessageChannels(this.type)) {
@@ -78,7 +83,7 @@ public class SpeechRecognizer extends Thread {
                 }
             }
 
-            if(result.equals("[]")){
+            if (result.equals("[]")) {
                 return;
             }
 
