@@ -1,10 +1,12 @@
-version: '3.8'
+version: "3.8"
 services:
   app:
     build: ./
     environment:
       - API_HOST=speech-recognition
       - API_PORT=8080
+      - OPENAI_API_HOST=openai-speech-to-text
+      - OPENAI_API_PORT=8080
       - PATH_RECORDED=/audio-files/
     volumes:
       - audio-files:/audio-files/
@@ -12,8 +14,6 @@ services:
 
   speech-recognition:
     build: ./speech-recognition
-    environment:
-      - PORT=8080
     volumes:
       - audio-files:/audio-files/
 

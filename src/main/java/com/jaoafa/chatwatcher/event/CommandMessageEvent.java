@@ -19,34 +19,36 @@ import java.util.Map;
 
 public class CommandMessageEvent extends ListenerAdapter {
     private static final List<SubcommandData> defaultSubCommands = List.of(
-        new SubcommandData("add-server", "このサーバを新規登録します。"),
-        new SubcommandData("remove-server", "このサーバを登録解除します。")
+            new SubcommandData("add-server", "このサーバを新規登録します。"),
+            new SubcommandData("remove-server", "このサーバを登録解除します。")
     );
 
     private static final List<SubcommandData> registeredSubCommands = List.of(
-        new SubcommandData("summon", "実行者が参加しているボイスチャンネルに参加します。")
-            .addOptions(
-                new OptionData(OptionType.CHANNEL, "channel", "参加するボイスチャンネル")
-                    .setChannelTypes(ChannelType.VOICE)
-                    .setRequired(false)
-            ),
-        new SubcommandData("disconnect", "ボイスチャンネルから退出します。"),
-        new SubcommandData("add-channel", "サーバに文字起こしテキスト送信先チャンネルを登録します。")
-            .addOptions(
-                new OptionData(OptionType.CHANNEL, "channel", "登録する文字起こしテキスト送信先チャンネル")
-                    .setChannelTypes(ChannelType.TEXT)
-                    .setRequired(false)
-            ),
-        new SubcommandData("remove-channel", "サーバから文字起こしテキスト送信先チャンネルを登録解除します。")
+            new SubcommandData("summon", "実行者が参加しているボイスチャンネルに参加します。")
+                    .addOptions(
+                            new OptionData(OptionType.CHANNEL, "channel", "参加するボイスチャンネル")
+                                    .setChannelTypes(ChannelType.VOICE)
+                                    .setRequired(false)
+                    ),
+            new SubcommandData("disconnect", "ボイスチャンネルから退出します。"),
+            new SubcommandData("add-channel", "サーバに文字起こしテキスト送信先チャンネルを登録します。")
+                    .addOptions(
+                            new OptionData(OptionType.STRING, "type", "文字起こしタイプ")
+                                    .setRequired(true),
+                            new OptionData(OptionType.CHANNEL, "channel", "登録する文字起こしテキスト送信先チャンネル")
+                                    .setChannelTypes(ChannelType.TEXT)
+                                    .setRequired(false)
+                    ),
+            new SubcommandData("remove-channel", "サーバから文字起こしテキスト送信先チャンネルを登録解除します。")
     );
 
     private final Map<String, BaseCmd> commands = Map.of(
-        "summon", new SummonCmd(),
-        "disconnect", new DisconnectCmd(),
-        "add-server", new AddServerCmd(),
-        "remove-server", new RemoveServerCmd(),
-        "add-channel", new AddChannelCmd(),
-        "remove-channel", new RemoveServerCmd()
+            "summon", new SummonCmd(),
+            "disconnect", new DisconnectCmd(),
+            "add-server", new AddServerCmd(),
+            "remove-server", new RemoveServerCmd(),
+            "add-channel", new AddChannelCmd(),
+            "remove-channel", new RemoveServerCmd()
     );
 
     @Override
@@ -78,7 +80,7 @@ public class CommandMessageEvent extends ListenerAdapter {
         List<Guild> guilds = jda.getGuilds();
         for (Guild guild : guilds) {
             SlashCommandData slashCommandData = Commands.slash("chatwatcher", "チャットウォッチャー")
-                .addSubcommands(defaultSubCommands);
+                    .addSubcommands(defaultSubCommands);
             if (ServerManager.isRegistered(guild)) {
                 slashCommandData.addSubcommands(registeredSubCommands);
             }
