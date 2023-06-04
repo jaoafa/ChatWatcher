@@ -38,8 +38,8 @@ public class UserAudioStreamProcessor extends Thread {
                     AudioReceiveHandler.OUTPUT_FORMAT,
                     bytes.length
                 ),
-                AudioFileFormat.Type.WAVE,
-                path.toFile()
+                    AudioFileFormat.Type.WAVE,
+                    path.toFile()
             );
             Files.deleteIfExists(stream.getPath());
 
@@ -48,15 +48,9 @@ public class UserAudioStreamProcessor extends Thread {
             Guild guild = stream.getGuild();
             User user = stream.getUser();
 
-            SpeechRecognizer google = new SpeechRecognizer(guild, user, path, "google");
-            SpeechRecognizer vosk = new SpeechRecognizer(guild, user, path, "vosk");
-            SpeechRecognizer whisper = new SpeechRecognizer(guild, user, path, "whisper");
-
-            google.start();
-            vosk.start();
-            whisper.start();
-
-            new FileDeleteProcessor(path, google, vosk, whisper).start();
+            new SpeechRecognizer(guild, user, path, "google").start();
+            new SpeechRecognizer(guild, user, path, "vosk").start();
+            new SpeechRecognizer(guild, user, path, "whisper").start();
         } catch (IOException e) {
             e.printStackTrace();
             UserAudioStream.remove(stream);

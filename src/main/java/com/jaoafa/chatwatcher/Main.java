@@ -4,6 +4,7 @@ import com.jaoafa.chatwatcher.event.AutoDisconnect;
 import com.jaoafa.chatwatcher.event.AutoJoin;
 import com.jaoafa.chatwatcher.event.AutoMove;
 import com.jaoafa.chatwatcher.event.CommandMessageEvent;
+import com.jaoafa.chatwatcher.lib.FileDeleteProcessor;
 import com.jaoafa.chatwatcher.lib.ServerManager;
 import com.jaoafa.chatwatcher.lib.UserAudioStreamMonitor;
 import net.dv8tion.jda.api.JDA;
@@ -51,6 +52,7 @@ public class Main extends ListenerAdapter {
 
         Timer timer = new Timer();
         UserAudioStreamMonitor.register(timer);
+        FileDeleteProcessor.register(timer);
     }
 
     @Override

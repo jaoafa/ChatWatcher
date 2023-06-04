@@ -3,30 +3,30 @@ package com.jaoafa.chatwatcher.lib;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Timer;
+import java.util.TimerTask;
+import java.util.stream.Stream;
 
-public class FileDeleteProcessor extends Thread {
-    private final Path path;
-    private final Thread googleThread;
-    private final Thread voskThread;
-    private final Thread whisperThread;
-
-    public FileDeleteProcessor(Path path, Thread googleThread, Thread voskThread, Thread whisperThread) {
-        this.path = path;
-        this.googleThread = googleThread;
-        this.voskThread = voskThread;
-        this.whisperThread = whisperThread;
+public class FileDeleteProcessor extends TimerTask {
+    public static void register(Timer timer) {
+        timer.schedule(new FileDeleteProcessor(), 0, 1000);
     }
 
     @Override
     public void run() {
         try {
-            while (googleThread.isAlive() || voskThread.isAlive() || whisperThread.isAlive()) {
-                Thread.sleep(100);
+            try (Stream<Path> paths = Files.walk(PathEnums.Recorded.toPath())) {
+                // 10分過ぎたファイルを削除
+                for (Path path : paths.filter(path -> !Files.isDirectory(path) && System.currentTimeMillis() - path.toFile().lastModified() >= 600000).toList()) {
+                    try {
+                        Files.deleteIfExists(path);
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
             }
-
-            Files.deleteIfExists(this.path);
-        } catch (IOException | InterruptedException e) {
-            Utils.println("❌ Failed to delete file: %s".formatted(this.path.toAbsolutePath().toString()));
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 }
