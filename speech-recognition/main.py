@@ -36,7 +36,7 @@ def root():
 
 
 @app.post("/recognize-google")
-async def recognize_google(req: ResponseModel):
+def recognize_google(req: ResponseModel):
     path = get_path(req)
     r = speech_recognition.Recognizer()
 
@@ -47,7 +47,7 @@ async def recognize_google(req: ResponseModel):
 
 
 @app.post("/recognize-vosk")
-async def recognize_vosk(req: ResponseModel):
+def recognize_vosk(req: ResponseModel):
     path = get_path(req)
     r = speech_recognition.Recognizer()
 
@@ -58,14 +58,14 @@ async def recognize_vosk(req: ResponseModel):
 
 
 @app.post("/recognize-whisper")
-async def recognize_whisper(req: ResponseModel):
+def recognize_whisper(req: ResponseModel):
     path = get_path(req)
     r = speech_recognition.Recognizer()
 
     with speech_recognition.AudioFile(path) as source:
         audio = r.record(source)
 
-    result = r.recognize_whisper(audio, language='ja')
+    result = r.recognize_whisper(audio, language='ja', show_dict=True)
     try:
         return json.loads(result)
     except:

@@ -32,10 +32,10 @@ public class SpeechRecognizer extends Thread {
         String result;
         try {
             OkHttpClient client = new OkHttpClient.Builder()
-                    .connectTimeout(30, TimeUnit.SECONDS)
-                    .callTimeout(30, TimeUnit.SECONDS)
-                    .readTimeout(30, TimeUnit.SECONDS)
-                    .writeTimeout(30, TimeUnit.SECONDS)
+                    .connectTimeout(60, TimeUnit.SECONDS)
+                    .callTimeout(60, TimeUnit.SECONDS)
+                    .readTimeout(60, TimeUnit.SECONDS)
+                    .writeTimeout(60, TimeUnit.SECONDS)
                     .build();
             RequestBody requestBody = RequestBody.create(
                     new JSONObject()
@@ -91,7 +91,7 @@ public class SpeechRecognizer extends Thread {
                 channel.sendMessage("`%s`: `%s`".formatted(user.getAsTag(), result)).queue();
             }
         } catch (IOException e) {
-            e.printStackTrace();
+            Utils.println("⚠️ %s error: %s %s".formatted(type, e.getClass().getSimpleName(), e.getMessage()));
         }
     }
 
