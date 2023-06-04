@@ -11,7 +11,9 @@ import org.json.JSONObject;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class ServerManager {
     private static List<Server> servers = new ArrayList<>();
@@ -44,11 +46,11 @@ public class ServerManager {
         return getServer(guild) != null;
     }
 
-    public static void addMessageChannel(Guild guild, MessageChannel channel) {
+    public static void addMessageChannel(Guild guild, String type, MessageChannel channel) {
         if (!isRegistered(guild)) {
             throw new IllegalArgumentException("Guild is not registered.");
         }
-        getServer(guild).addMessageChannel(channel);
+        getServer(guild).addMessageChannel(type, channel);
         save();
     }
 
@@ -88,28 +90,44 @@ public class ServerManager {
 
     static class Server {
         private Guild guild;
-        private List<MessageChannel> MessageChannels = new ArrayList<>();
+        private final Map<String, List<MessageChannel>> messageChannels = new HashMap<>();
 
         public Server(Guild guild) {
             this.guild = guild;
         }
 
-        protected void addMessageChannel(MessageChannel channel) {
-            MessageChannels.add(channel);
+        protected void addMessageChannel(String type, MessageChannel channel) {
+            if (!messageChannels.containsKey(type)) {
+                messageChannels.put(type, new ArrayList<>());
+            }
+            List<MessageChannel> channels = messageChannels.get(type);
+            if (channels.contains(channel)) {
+                return;
+            }
+            channels.add(channel);
+            messageChannels.put(type, channels);
         }
 
         public Guild getGuild() {
             return guild;
         }
 
-        public List<MessageChannel> getMessageChannels() {
-            return MessageChannels;
+        public List<MessageChannel> getMessageChannels(String type) {
+            return messageChannels.get(type);
         }
 
         public String serialize() {
             JSONObject object = new JSONObject();
             object.put("guild_id", guild.getId());
-            object.put("text_channel_ids", MessageChannels.stream().map(MessageChannel::getId).toArray());
+            JSONObject jsonMessageChannels = new JSONObject();
+            for (Map.Entry<String, List<MessageChannel>> entry : messageChannels.entrySet()) {
+                JSONArray jsonMessageChannelIds = new JSONArray();
+                for (MessageChannel MessageChannel : entry.getValue()) {
+                    jsonMessageChannelIds.put(MessageChannel.getId());
+                }
+                jsonMessageChannels.put(entry.getKey(), jsonMessageChannelIds);
+            }
+            object.put("channels", jsonMessageChannels);
             return object.toString();
         }
 
@@ -122,18 +140,23 @@ public class ServerManager {
 
             Server server = new Server(guild);
             server.guild = guild;
-            List<MessageChannel> MessageChannels = new ArrayList<>();
-            JSONArray MessageChannelIds = object.getJSONArray("text_channel_ids");
-            for (int i = 0; i < MessageChannelIds.length(); i++) {
-                TextChannel textChannel = guild.getTextChannelById(MessageChannelIds.getString(i));
 
-                MessageChannel MessageChannel = textChannel != null ? textChannel : guild.getThreadChannelById(MessageChannelIds.getString(i));
-                if (MessageChannel == null) {
-                    throw new IllegalArgumentException("MessageChannel is null.");
-                }
-                MessageChannels.add(MessageChannel);
+            if (!object.has("channels")) {
+                return server;
             }
-            server.MessageChannels = MessageChannels;
+
+            JSONObject jsonMessageChannels = object.getJSONObject("channels");
+            for (String type : jsonMessageChannels.keySet()) {
+                JSONArray jsonMessageChannelIds = jsonMessageChannels.getJSONArray(type);
+                for (int i = 0; i < jsonMessageChannelIds.length(); i++) {
+                    String id = jsonMessageChannelIds.getString(i);
+                    TextChannel channel = guild.getTextChannelById(id);
+                    if (channel == null) {
+                        continue;
+                    }
+                    server.addMessageChannel(type, channel);
+                }
+            }
             return server;
         }
     }
