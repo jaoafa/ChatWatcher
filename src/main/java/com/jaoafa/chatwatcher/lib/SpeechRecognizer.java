@@ -67,7 +67,7 @@ public class SpeechRecognizer extends Thread {
                         return;
                     }
                     for (MessageChannel channel : server.getMessageChannels(this.type)) {
-                        channel.sendMessage("`%s`: `%s`".formatted(user.getAsTag(), obj.getString("text"))).queue();
+                        channel.sendMessage("`%s`: `%s`".formatted(user.getAsTag(), obj.getString("text").replaceAll(" ", ""))).queue();
                     }
                     return;
                 }
@@ -88,7 +88,7 @@ public class SpeechRecognizer extends Thread {
             }
 
             for (MessageChannel channel : server.getMessageChannels(this.type)) {
-                channel.sendMessage("`%s`: `%s`".formatted(user.getAsTag(), result)).queue();
+                channel.sendMessage("`%s`: `%s`".formatted(user.getAsTag(), result.replaceAll(" ", ""))).queue();
             }
         } catch (IOException e) {
             Utils.println("⚠️ %s error: %s %s".formatted(type, e.getClass().getSimpleName(), e.getMessage()));
