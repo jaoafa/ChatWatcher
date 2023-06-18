@@ -9,6 +9,7 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.concurrent.TimeUnit;
 
 public class SpeechRecognizer extends Thread {
@@ -26,8 +27,18 @@ public class SpeechRecognizer extends Thread {
 
     @Override
     public void run() {
-        String hostname = System.getenv("API_HOST") != null ? System.getenv("API_HOST") : "localhost";
-        String port = System.getenv("API_PORT") != null ? System.getenv("API_PORT") : "8080";
+        String hostname =
+                System.getenv(type.toUpperCase(Locale.ROOT) + "_API_HOST") != null ?
+                        System.getenv(type.toUpperCase(Locale.ROOT) + "_API_HOST") :
+                        System.getenv("API_HOST") != null ?
+                                System.getenv("API_HOST") :
+                                "localhost";
+        String port =
+                System.getenv(type.toUpperCase(Locale.ROOT) + "_API_PORT") != null ?
+                        System.getenv(type.toUpperCase(Locale.ROOT) + "_API_PORT") :
+                        System.getenv("API_PORT") != null ?
+                                System.getenv("API_PORT") :
+                                "8080";
         String url = "http://" + hostname + ":" + port + "/recognize-" + type;
         String result;
         try {
@@ -46,9 +57,6 @@ public class SpeechRecognizer extends Thread {
             Request request = new Request.Builder().url(url).post(requestBody).build();
             try (Response response = client.newCall(request).execute()) {
                 try (ResponseBody body = response.body()) {
-                    if (body == null) {
-                        return;
-                    }
                     result = body.string();
                 }
             }
