@@ -7,7 +7,9 @@ import torch
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-
+import soundfile
+import whisper
+import vosk
 
 class ResponseModel(BaseModel):
     path: str
