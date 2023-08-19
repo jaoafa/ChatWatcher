@@ -32,13 +32,23 @@ public class AutoMove extends ListenerAdapter {
             return; // 移動元チャンネルに自身が入っていない
         }
 
-        if (connectedUsers >= newUsers) {
-            return; // 自身がいるチャンネルの人数より、移動先の人数の方が少ない、もしくは同じ場合終了
-        }
-
         if (event.getGuild().getAfkChannel() == null &&
                 event.getGuild().getAfkChannel().getIdLong() == newChannel.getIdLong()) {
+            // VCに残ったユーザーが全員Bot、または誰もいなくなった
+            boolean existsUser = newChannel
+                    .getMembers()
+                    .stream()
+                    .anyMatch(member -> !member.getUser().isBot()); // Bot以外がいるかどうか
+            if (!existsUser) {
+                return;
+            }
+
+            event.getGuild().getAudioManager().closeAudioConnection();
             return; // 移動先がAFKチャンネルの場合終了
+        }
+
+        if (connectedUsers >= newUsers) {
+            return; // 自身がいるチャンネルの人数より、移動先の人数の方が少ない、もしくは同じ場合終了
         }
 
         Utils.connectVoiceChannel(event.getGuild(), event.getChannelJoined());
