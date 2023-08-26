@@ -1,6 +1,7 @@
 package com.jaoafa.chatwatcher.event;
 
 import com.jaoafa.chatwatcher.lib.Utils;
+import net.dv8tion.jda.api.entities.GuildVoiceState;
 import net.dv8tion.jda.api.entities.channel.middleman.AudioChannel;
 import net.dv8tion.jda.api.events.guild.voice.GuildVoiceUpdateEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
@@ -9,48 +10,48 @@ import org.jetbrains.annotations.NotNull;
 public class AutoMove extends ListenerAdapter {
     @Override
     public void onGuildVoiceUpdate(@NotNull GuildVoiceUpdateEvent event) {
-        AudioChannel oldChannel = event.getOldValue();
-        AudioChannel newChannel = event.getNewValue();
-        if (oldChannel == null || newChannel == null) return; // 移動以外は除外
-        long connectedUsers = oldChannel.getMembers().stream()
-                .filter(member -> !member.getUser().isBot())
-                .count();
-        long newUsers = newChannel.getMembers().stream()
-                .filter(member -> !member.getUser().isBot())
-                .count();
+        if (event.getMember().getUser().isBot()) return;
 
-        if (event.getGuild().getSelfMember().getVoiceState() == null ||
-                event.getGuild().getSelfMember().getVoiceState().getChannel() == null) {
-            return; // 自身がどのVCにも参加していない
-        }
+        AudioChannel oldChannel = event.getChannelLeft();
+        AudioChannel newChannel = event.getChannelJoined();
 
-        if (event.getMember().getUser().isBot()) {
+        // 移動以外は除外
+        if (oldChannel == null || newChannel == null) return;
+
+        GuildVoiceState selfVoiceState = event.getGuild().getSelfMember().getVoiceState();
+
+        // 自身がどのVCにも参加していない
+        if (selfVoiceState == null || selfVoiceState.getChannel() == null) return;
+
+        // 移動元のチャンネルに自身がいない
+        if (selfVoiceState.getChannel().getIdLong() != oldChannel.getIdLong()) return;
+
+        long oldChannelUsers = getChannelMembers(oldChannel);
+        long newChannelUsers = getChannelMembers(newChannel);
+
+        if (isAfkChannel(newChannel)) {
+            // 現在のチャンネルにまだ人がいる
+            if (oldChannelUsers != 0) return;
+
+            // 最後の一人が AFK に移動した
+            event.getGuild().getAudioManager().closeAudioConnection();
             return;
         }
 
-        if (event.getGuild().getSelfMember().getVoiceState().getChannel() != oldChannel) {
-            return; // 移動元チャンネルに自身が入っていない
-        }
-
-        if (event.getGuild().getAfkChannel() == null &&
-                event.getGuild().getAfkChannel().getIdLong() == newChannel.getIdLong()) {
-            // VCに残ったユーザーが全員Bot、または誰もいなくなった
-            boolean existsUser = newChannel
-                    .getMembers()
-                    .stream()
-                    .anyMatch(member -> !member.getUser().isBot()); // Bot以外がいるかどうか
-            if (!existsUser) {
-                return;
-            }
-
-            event.getGuild().getAudioManager().closeAudioConnection();
-            return; // 移動先がAFKチャンネルの場合終了
-        }
-
-        if (connectedUsers >= newUsers) {
-            return; // 自身がいるチャンネルの人数より、移動先の人数の方が少ない、もしくは同じ場合終了
-        }
+        // 移動先の人数が自身がいるチャンネルの人数以下の場合
+        if (oldChannelUsers >= newChannelUsers) return;
 
         Utils.connectVoiceChannel(event.getGuild(), event.getChannelJoined());
+    }
+
+    long getChannelMembers(@NotNull AudioChannel channel) {
+        return channel.getMembers().stream()
+                .filter(member -> !member.getUser().isBot())
+                .count();
+    }
+
+    boolean isAfkChannel(@NotNull AudioChannel channel) {
+        if (channel.getGuild().getAfkChannel() == null) return false;
+        return channel.getIdLong() == channel.getGuild().getAfkChannel().getIdLong();
     }
 }
