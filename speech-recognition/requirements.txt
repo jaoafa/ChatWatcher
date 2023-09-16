@@ -3,4 +3,4 @@ uvicorn==0.23.2
 fastapi==0.103.1
 pydantic==2.3.0
 vosk==0.3.45
-numpy==1.25.2
+numpy==1.26.0
