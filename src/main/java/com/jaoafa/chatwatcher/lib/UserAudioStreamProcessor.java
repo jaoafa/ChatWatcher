@@ -49,8 +49,6 @@ public class UserAudioStreamProcessor extends Thread {
             User user = stream.getUser();
 
             new SpeechRecognizer(guild, user, path, "google").start();
-            new SpeechRecognizer(guild, user, path, "vosk").start();
-            new SpeechRecognizer(guild, user, path, "whisper").start();
         } catch (IOException e) {
             e.printStackTrace();
             UserAudioStream.remove(stream);

@@ -56,6 +56,10 @@ public class SpeechRecognizer extends Thread {
             );
             Request request = new Request.Builder().url(url).post(requestBody).build();
             try (Response response = client.newCall(request).execute()) {
+                if (!response.isSuccessful()) {
+                    Utils.println("⚠️ %s error: %s %s".formatted(type, response.code(), response.message()));
+                    return;
+                }
                 try (ResponseBody body = response.body()) {
                     result = body.string();
                 }
@@ -71,11 +75,11 @@ public class SpeechRecognizer extends Thread {
             if (isJSONObject(result)) {
                 JSONObject obj = new JSONObject(result);
                 if (obj.has("text")) {
-                    if (obj.getString("text").length() == 0) {
+                    if (obj.getString("text").isEmpty()) {
                         return;
                     }
                     for (MessageChannel channel : server.getMessageChannels(this.type)) {
-                        channel.sendMessage("`%s`: `%s`".formatted(user.getAsTag(), obj.getString("text").replaceAll(" ", ""))).queue();
+                        channel.sendMessage("`%s`: `%s`".formatted(user.getName(), obj.getString("text").replaceAll(" ", ""))).queue();
                     }
                     return;
                 }
@@ -84,7 +88,7 @@ public class SpeechRecognizer extends Thread {
                     String googleResultText = parseGoogleResult(obj);
                     if (googleResultText != null) {
                         for (MessageChannel channel : server.getMessageChannels(this.type)) {
-                            channel.sendMessage("`%s`: %s".formatted(user.getAsTag(), googleResultText)).queue();
+                            channel.sendMessage("`%s`: %s".formatted(user.getName(), googleResultText)).queue();
                         }
                     }
                     return;
@@ -96,7 +100,7 @@ public class SpeechRecognizer extends Thread {
             }
 
             for (MessageChannel channel : server.getMessageChannels(this.type)) {
-                channel.sendMessage("`%s`: `%s`".formatted(user.getAsTag(), result.replaceAll(" ", ""))).queue();
+                channel.sendMessage("`%s`: `%s`".formatted(user.getName(), result.replaceAll(" ", ""))).queue();
             }
         } catch (IOException e) {
             Utils.println("⚠️ %s error: %s %s".formatted(type, e.getClass().getSimpleName(), e.getMessage()));
@@ -118,7 +122,7 @@ public class SpeechRecognizer extends Thread {
         }
 
         JSONArray alternative = googleResult.getJSONArray("alternative");
-        if (alternative.length() == 0) {
+        if (alternative.isEmpty()) {
             return null;
         }
 
