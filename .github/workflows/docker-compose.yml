@@ -16,4 +16,4 @@ jobs:
         run: echo '{}' > config.json
 
       - name: Build the Docker Compose
-        run: docker-compose build
+        run: docker compose build
