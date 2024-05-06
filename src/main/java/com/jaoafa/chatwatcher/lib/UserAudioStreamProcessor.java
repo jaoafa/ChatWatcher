@@ -32,11 +32,18 @@ public class UserAudioStreamProcessor extends Thread {
         try {
             Path path = PathEnums.Recorded.getPath(uniqId + "-" + stream.getStartedRecordedAt() + ".wav");
             byte[] bytes = Files.readAllBytes(stream.getPath());
+
+            // 最後に数秒無音を追加する
+            int silenceLength = AudioReceiveHandler.OUTPUT_FORMAT.getFrameSize() * (int)AudioReceiveHandler.OUTPUT_FORMAT.getSampleRate();
+            byte[] newBytes = new byte[bytes.length + silenceLength];
+            System.arraycopy(bytes, 0, newBytes, 0, bytes.length);
+            System.arraycopy(new byte[silenceLength], 0, newBytes, bytes.length, silenceLength);
+
             AudioSystem.write(
                 new AudioInputStream(
-                    new ByteArrayInputStream(bytes),
+                    new ByteArrayInputStream(newBytes),
                     AudioReceiveHandler.OUTPUT_FORMAT,
-                    bytes.length
+                        newBytes.length
                 ),
                     AudioFileFormat.Type.WAVE,
                     path.toFile()
