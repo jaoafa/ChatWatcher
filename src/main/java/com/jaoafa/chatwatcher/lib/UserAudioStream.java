@@ -52,8 +52,8 @@ public class UserAudioStream {
 
             byte[] prev = Files.readAllBytes(this.path);
             byte[] newData = new byte[prev.length + data.length];
-            System.arraycopy(prev, 0, newData, 0, prev.length);
-            System.arraycopy(data, 0, newData, prev.length, data.length);
+            System.arraycopy(prev, 0, newData, 0, prev.length); // 前のデータをコピー
+            System.arraycopy(data, 0, newData, prev.length, data.length); // 新しいデータをコピー
             Files.write(this.path, newData);
 
             lastRecordedAt = System.currentTimeMillis();
