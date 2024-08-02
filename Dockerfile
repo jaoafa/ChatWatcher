@@ -1,4 +1,4 @@
-FROM maven:3 as builder
+FROM maven:3 AS builder
 
 WORKDIR /build
 COPY pom.xml /build/pom.xml
