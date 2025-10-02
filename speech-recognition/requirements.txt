@@ -1,5 +1,5 @@
 SpeechRecognition==3.14.3
 uvicorn==0.37.0
-fastapi==0.117.1
+fastapi==0.118.0
 pydantic==2.11.9
 numpy==2.3.3
