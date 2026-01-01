@@ -7,7 +7,7 @@ RUN mvn -B package; echo ""
 COPY src /build/src
 RUN mvn -B package
 
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:17.0.17_10-jre-alpine
 
 WORKDIR /app
 
