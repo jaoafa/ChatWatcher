@@ -1,5 +1,6 @@
 package com.jaoafa.chatwatcher;
 
+import club.minnced.discord.jdave.interop.JDaveSessionFactory;
 import com.jaoafa.chatwatcher.event.AutoDisconnect;
 import com.jaoafa.chatwatcher.event.AutoJoin;
 import com.jaoafa.chatwatcher.event.AutoMove;
@@ -9,6 +10,7 @@ import com.jaoafa.chatwatcher.lib.ServerManager;
 import com.jaoafa.chatwatcher.lib.UserAudioStreamMonitor;
 import net.dv8tion.jda.api.JDA;
 import net.dv8tion.jda.api.JDABuilder;
+import net.dv8tion.jda.api.audio.AudioModuleConfig;
 import net.dv8tion.jda.api.events.session.ReadyEvent;
 import net.dv8tion.jda.api.hooks.ListenerAdapter;
 import net.dv8tion.jda.api.requests.GatewayIntent;
@@ -31,6 +33,9 @@ public class Main extends ListenerAdapter {
             jda = JDABuilder.createDefault(config.getString("token"))
                     .setChunkingFilter(ChunkingFilter.ALL)
                     .setMemberCachePolicy(MemberCachePolicy.ALL)
+                    .setAudioModuleConfig(
+                            new AudioModuleConfig().withDaveSessionFactory(new JDaveSessionFactory())
+                    )
                     .enableIntents(
                             GatewayIntent.GUILD_MEMBERS,
                             GatewayIntent.GUILD_PRESENCES,
