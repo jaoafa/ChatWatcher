@@ -2,7 +2,7 @@ FROM maven:3.9-eclipse-temurin-25 AS builder
 
 WORKDIR /build
 COPY pom.xml /build/pom.xml
-RUN mvn -B package; echo ""
+RUN mvn -B dependency:go-offline
 
 COPY src /build/src
 RUN mvn -B package
