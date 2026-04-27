@@ -1,4 +1,4 @@
-SpeechRecognition==3.16.0
+SpeechRecognition==3.16.1
 uvicorn==0.46.0
 fastapi==0.136.1
 pydantic==2.13.3
