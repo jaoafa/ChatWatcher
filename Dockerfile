@@ -7,7 +7,7 @@ RUN mvn -B dependency:go-offline
 COPY src /build/src
 RUN mvn -B package
 
-FROM eclipse-temurin:25.0.2_10-jre
+FROM eclipse-temurin:25.0.3_9-jre
 
 WORKDIR /app
 
