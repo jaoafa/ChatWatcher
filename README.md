@@ -2,9 +2,14 @@
 
 Discord のボイスチャンネル文字起こし bot です。参加者ごとの発話をローカルの CPU だけで認識し(クラウドの ASR は使いません)、話している最中は約 2 秒ごとに更新しながらテキストチャンネルへ投稿します。
 
-```
-Discord voice (JDA + DAVE) -> ユーザー別 PCM -> Silero VAD -> 発話ファイル (追記のみ)
-  -> partial/final ジョブ (SQLite キュー) -> ASR ワーカー (sherpa-onnx) -> Discord メッセージ作成/編集
+```mermaid
+flowchart LR
+  A["Discord voice<br>(JDA + DAVE)"] --> B["ユーザー別 PCM"]
+  B --> C["Silero VAD"]
+  C --> D["発話ファイル<br>(追記のみ)"]
+  D --> E["partial/final ジョブ<br>(SQLite キュー)"]
+  E --> F["ASR ワーカー<br>(sherpa-onnx)"]
+  F --> G["Discord メッセージ<br>作成/編集"]
 ```
 
 ## 使い方
@@ -64,10 +69,6 @@ Discord 上で、文字起こしを投稿したいテキストチャンネルで
 - 表示するのは最新のリビジョンだけです。遅れて届いた古い結果は無視し、追いつかない編集は最新の結果にまとめます。
 - オフラインモデルは partial のたびに発話全体を再認識します。30 秒の発話では、ASR の所要時間が発話の長さの約 8 倍になります。
 - Discord は、ユーザーが黙っている間はパケットを送らないため、発話の終了はパケットのタイムアウトでも検出します。
-
-## モデル比較
-
-FLEURS で各エンジンを評価しました(日本語は CER、英語は WER)。4 コアでは、SenseVoice (2024-07 int8) が最もバランスが良く、日本語 CER 7.9%、英語 WER 6.9%、リアルタイム係数 0.19 でした。2025-09 版の SenseVoice は広東語向けの fine-tune で、日本語には使えません。
 
 ## 開発
 
