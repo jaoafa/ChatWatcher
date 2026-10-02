@@ -2,16 +2,6 @@
 
 Discord のボイスチャンネル文字起こし bot です。参加者ごとの発話をローカルの CPU だけで認識し(クラウドの ASR は使いません)、話している最中は約 2 秒ごとに更新しながらテキストチャンネルへ投稿します。
 
-```mermaid
-flowchart LR
-  A["Discord voice<br>(JDA + DAVE)"] --> B["ユーザー別 PCM"]
-  B --> C["Silero VAD"]
-  C --> D["発話ファイル<br>(追記のみ)"]
-  D --> E["partial/final ジョブ<br>(SQLite キュー)"]
-  E --> F["ASR ワーカー<br>(sherpa-onnx)"]
-  F --> G["Discord メッセージ<br>作成/編集"]
-```
-
 ## 使い方
 
 ```sh
