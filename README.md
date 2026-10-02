@@ -1,30 +1,108 @@
-# ChatWatcher
+# koemoji
 
-VC の音声を聞いて文字起こしする。(Voice)ChatWatcher
+Discord のボイスチャンネル文字起こし bot です。参加者ごとの発話をローカルの CPU だけで認識し(クラウドの ASR は使いません)、話している最中は約 2 秒ごとに更新しながらテキストチャンネルへ投稿します。
 
-## Flow
+## 動作環境
 
-### VC への参加
+- Docker (Compose)。linux/amd64 のみ対応です。ネイティブライブラリと Docker イメージが amd64 向けのため、ARM では動きません。
+- 音声認識は CPU だけで動きます。GPU は使いません。
 
-以下いずれかの方法で @ChatWatcher#5297 が VC に参加する
+## Bot の準備
 
-- ユーザーの参加・移動をトリガーとした自動参加
-    - Bot がその Guild においてどこにも入っていない状態で、ユーザーがいずれかの VC に参加した場合その VC に参加する。
-    - Bot がその Guild においていずれかの VC に入っている状態で、その VC から誰もいなくなった場合（Bot を除く）抜ける、または別のユーザーがいるチャンネルに移動する。
-- ユーザーのテキストチャンネルにおける発言をトリガーとした参加
-    - コマンド `<PREFIX>join` や `<PREFIX>summon` を実行したユーザーがいる VC に参加する
+1. [Discord Developer Portal](https://discord.com/developers/applications) でアプリケーションを作り、Bot のトークンを取得します。
+2. Privileged Gateway Intents は、すべてオフのままで動きます。bot が使う Intent は `GUILD_VOICE_STATES` だけです。
+3. OAuth2 の URL Generator で、スコープに `bot` と `applications.commands` を選び、サーバーへ招待します。
+4. 権限は、文字起こしを投稿するテキストチャンネルで「チャンネルを見る」と「メッセージを送信」、対象のボイスチャンネルで「接続」が必要です。
 
-## VC での音声
+## 使い方
 
-- ユーザー毎に音声を拾って、`UserAudioStreams/{UserId}-{StartMilliSecond}.cw` に逐次保存する
-- 最終録音時刻から 1 秒経過時点で wav ファイルに変換
-- 変換した wav ファイルを SpeechRecognition に通す
-- 結果を適宜送信
+```sh
+echo 'DISCORD_TOKEN=...' > .env
+docker compose up -d --build
+```
 
-## VC からの退出
+モデルは初回起動時に `./data/models` へ自動ダウンロードされ、キャッシュされます。事前に全部取得したい場合は `scripts/download-models.sh` を使います。
 
-以下いずれかの方法で退出
+Discord 上で、文字起こしを投稿したいテキストチャンネルで `/register` を一度実行します(`channel` で投稿先を指定することもできます)。VC への参加方式は jaoafa/ChatWatcher と同じです。
 
-- ユーザーの退出をトリガーとした自動退出
-    - Bot が入っている VC から Bot 以外のユーザーが全員抜けた場合、退出する
-- コマンド `<PREFIX>leave` が叩かれた場合退出する
+- **自動参加**: 登録済みサーバーで bot がどの VC にもいないとき、人間が VC に入る(AFK チャンネルを除く)と bot も参加します。
+- **自動移動**: 人間が bot のいるチャンネルから、より人間の多いチャンネルへ移ると bot も追従します。
+- **自動退出**: bot のいるチャンネルから人間がいなくなる(最後の 1 人が AFK へ移った場合を含む)と bot も退出します。
+- `/join [channel]` と `/leave` で手動操作もできます。`/unregister` でそのサーバーの機能をすべて無効にします。
+
+コマンドはいずれも「サーバーの管理」権限が必要です。未登録のサーバーには参加も録音もしません。
+
+投稿は既定で `ユーザー名: 発言` の形式です。複数のエンジンを指定した場合は、エンジンごとに別メッセージとなり、先頭に `[エンジン名]` が付くので、モデルを並べて比較できます。本番運用ではエンジンを 1 つにしてください。
+
+## 設定 (環境変数)
+
+| 変数 | 既定値 | 説明 |
+|---|---|---|
+| `DISCORD_TOKEN` | (必須) | Bot のトークン |
+| `MODE` | `all` | `all`、`capture`、`worker` のいずれか。分けるとワーカーだけをスケールできます。両者は `QUEUE_DB` と `AUDIO_DIR` を共有します |
+| `ASR_ENGINES` | `sensevoice` | すべての発話を送るエンジン(カンマ区切り) |
+| `MESSAGE_FORMAT` | `{user}: {text}` | 投稿メッセージの書式。`{user}`、`{text}`、`{engine}` が使えます。エンジンが複数で書式に `{engine}` が無い場合は、先頭に `[エンジン名] ` が付きます |
+| `WORKER_ENGINES` | `ASR_ENGINES` と同じ | 1 エントリにつきワーカースレッドを 1 つ起動します。`name:N` で N 個 |
+| `ASR_THREADS` | `4` | ワーカー 1 つあたりの ONNX スレッド数 |
+| `ASR_LANGUAGE` | `ja` | SenseVoice / Whisper への言語ヒント(空なら自動判定) |
+| `INCLUDE_BOTS` | `true` | 他の bot の音声も文字起こしする |
+| `HEALTH_PORT` | `8080` | `/health` と `/metrics` の HTTP ポート(`0` で無効。無効のときは Docker の `HEALTHCHECK` も常に成功します) |
+| `MODELS_DIR`、`VAD_MODEL`、`AUDIO_DIR`、`QUEUE_DB` | `Config.java` 参照 | 各種パス。Docker イメージでは `/data` 以下に設定済みです |
+
+エンジン: `sensevoice`、`reazon-ja`、`reazon-ja-en`、`qwen3-asr`、`whisper-small`、`whisper-turbo`、`parakeet-ja`、`dolphin-small`(`SherpaEngine.DIRS` 参照)。
+
+### 発話検出・認識の調整
+
+通常は変更不要です。
+
+| 変数 | 既定値 | 説明 |
+|---|---|---|
+| `ASR_PAD_MS` | `0` | ASR に渡す音声の前後に足す無音の長さ |
+| `PARTIAL_INTERVAL_MS` | `2000` | partial 認識の間隔 |
+| `MAX_UTTERANCE_MS` | `30000` | この長さで発話を確定し、続きを新しい発話として扱います |
+| `VAD_THRESHOLD` | `0.5` | Silero の発話確率のしきい値 |
+| `VAD_START_MS` / `VAD_END_SILENCE_MS` / `VAD_PREROLL_MS` | `96` / `700` / `320` | 発話開始とみなす連続長、発話終了とみなす無音長、開始検出より前に残しておく音声の長さ |
+| `MIN_UTTERANCE_MS` | `300` | これより短い発話は捨てます |
+| `AUDIO_TTL_MIN` / `FAILED_AUDIO_TTL_MIN` | `30` / `1440` | すべての final が確定してから、音声を削除するまでの時間 |
+| `RETRY_MAX` / `RETRY_BACKOFF_MS` | `5` / `2000` | final ジョブの再試行回数と、指数バックオフの基準時間 |
+
+## データの置き場
+
+永続化するものはすべて `./data`(コンテナ内の `/data`)に置きます。
+
+| パス | 内容 | 消したとき |
+|---|---|---|
+| `models/` | 音声認識と VAD のモデル | 次回起動時に再ダウンロードされます |
+| `audio/` | 認識待ちの発話ファイル | `AUDIO_TTL_MIN` 経過後に自動で削除されます。手動で消すと、処理中の発話は失われます |
+| `queue.db` | ジョブキューと、`/register` の登録内容 | 登録が消えるので、各サーバーで `/register` のやり直しが必要です |
+
+## 旧版からの移行
+
+旧版の `config.json` と `servers.json` は読み込みません。`DISCORD_TOKEN` を環境変数に設定し、各サーバーで `/register` をやり直してください。
+
+## 制限事項
+
+- 1 サーバーで同時に参加できるボイスチャンネルは 1 つです。
+
+## 運用
+
+- `/health` は、Discord に接続済み(capture)かつ、設定した全ワーカースレッドが生存(worker)のときだけ 200 を返します。Docker の `HEALTHCHECK` がこれを呼びます。
+- `/metrics` は Prometheus 形式で、`koemoji_jobs{engine,status}`(キューの深さと結果)、`koemoji_workers_alive`、エンジンごとの認識回数と所要時間を返します。
+- 起動時に、未知のエンジン名は即エラーになります。`MODE=all` では、ワーカーのないエンジンもエラーです。`MODE=capture` ではワーカー側が分からないため、ワーカーコンテナの `WORKER_ENGINES` が `ASR_ENGINES` を網羅するようにしてください。
+- ユーザー別の音声パイプライン(VAD)は、音声が 5 分途切れると解放されます。
+
+## 開発
+
+```sh
+scripts/install-sherpa.sh   # 初回のみ: sherpa-onnx は Maven Central に無いため、リリースの jar を ~/.m2 に入れます
+mvn test      # PipelineTest は data/models に sensevoice と test_silero_vad.wav、UserPipelineTest は silero_vad.onnx と test_silero_vad.wav があるときだけ実行されます(wav は音声を含む 16 kHz モノラル 16-bit の WAV を自分で置きます)
+mvn package   # target/koemoji.jar
+```
+
+設計上の要点:
+
+- partial はスナップショットです。ジョブは、伸び続ける音声ファイルの先頭 `snapshot_bytes` だけを読むので、追記が並行しても、各リビジョンの見る内容は変わりません。
+- 発話のキュー済み partial は、より新しいジョブに置き換えられます。final は捨てません。表示するのは最新のリビジョンだけで、遅れて届いた古い結果は無視します。
+- オフラインモデルは partial のたびに発話全体を再認識するため、30 秒の発話では、ASR の所要時間が発話の長さの約 8 倍になります。
+
+コンテナは意図的に root で動かしています。rootless Docker では、非 root ユーザーがバインドマウントした `./data` に書き込めないためです。

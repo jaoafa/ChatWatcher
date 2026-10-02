@@ -1,22 +1,16 @@
 services:
-  app:
-    build: ./
+  koemoji:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
     environment:
-      - GOOGLE_API_HOST=speech-recognition-google
-      - API_PORT=8080
-      - OPENAI_API_HOST=openai-speech-to-text
-      - OPENAI_API_PORT=8080
-      - PATH_RECORDED=/audio-files/
+      MODE: all
+      # engine defaults to sensevoice; set ASR_ENGINES=a,b to compare several (see README)
+      ASR_THREADS: 2
+      ASR_LANGUAGE: ja
+      ASR_PAD_MS: 300
     volumes:
-      - audio-files:/audio-files/
       - ./data:/data
-    restart: always
-
-  speech-recognition-google:
-    build: ./speech-recognition
-    volumes:
-      - audio-files:/audio-files/
-    restart: always
-
-volumes:
-  audio-files:
