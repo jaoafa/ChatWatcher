@@ -1,5 +1,20 @@
 {
   "extends": [
-    "github>book000/templates//renovate/base"
+    "github>book000/templates//renovate/base",
+    "docker:pinDigests"
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/(^|/)pom\\.xml$/"
+      ],
+      "matchStrings": [
+        "<sherpa\\.version>(?<currentValue>[^<]+)</sherpa\\.version>"
+      ],
+      "depNameTemplate": "k2-fsa/sherpa-onnx",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>.+)$"
+    }
   ]
 }
