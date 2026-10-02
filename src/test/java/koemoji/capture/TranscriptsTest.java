@@ -56,9 +56,12 @@ class TranscriptsTest {
 
   @BeforeEach void setUp() throws Exception { start("a"); }
 
-  private void start(String engines) throws Exception {
+  private void start(String engines) throws Exception { start(engines, null); }
+
+  private void start(String engines, String format) throws Exception {
     var tmp = Files.createTempDirectory("cwtr");
-    var env = Map.of("AUDIO_DIR", tmp.resolve("audio").toString(), "QUEUE_DB", tmp.resolve("q.db").toString(), "ASR_ENGINES", engines);
+    Map<String, String> env = Map.of("AUDIO_DIR", tmp.resolve("audio").toString(), "QUEUE_DB", tmp.resolve("q.db").toString(), "ASR_ENGINES", engines);
+    if (format != null) { env = new java.util.HashMap<>(env); env.put("MESSAGE_FORMAT", format); }
     var c = Config.of(env::get);
     db = new Db(c);
     calls.clear();
@@ -77,7 +80,7 @@ class TranscriptsTest {
     result("a", 1, false, "hello");
     result("a", 2, false, "hello world");
     result("a", 3, true, "Hello, world.");
-    assertEquals(List.of("send:[a] bob: hello", "edit:1000:[a] bob: hello world", "edit:1000:[a] bob: Hello, world."), calls);
+    assertEquals(List.of("send:bob: hello", "edit:1000:bob: hello world", "edit:1000:bob: Hello, world."), calls);
   }
 
   @Test void aLateResultFromAnOlderRevisionIsIgnored() {
@@ -86,7 +89,7 @@ class TranscriptsTest {
     result("a", 2, false, "new");
     db.complete(old.id(), "w", "old");
     t.apply();
-    assertEquals(List.of("send:[a] bob: new"), calls);
+    assertEquals(List.of("send:bob: new"), calls);
   }
 
   @Test void emptyPartialsPostNothingAndAnEmptyFinalRetractsTheMessage() {
@@ -94,7 +97,7 @@ class TranscriptsTest {
     assertEquals(List.of(), calls);
     result("a", 2, false, "um");
     result("a", 3, true, "");
-    assertEquals(List.of("send:[a] bob: um", "delete:1000"), calls);
+    assertEquals(List.of("send:bob: um", "delete:1000"), calls);
   }
 
   @Test void eachEngineGetsItsOwnMessage() throws Exception {
@@ -127,6 +130,18 @@ class TranscriptsTest {
 
   @Test void messagesNeverPingAnyone() {
     result("a", 1, true, "@everyone hi");
-    assertEquals(List.of("send:[a] bob: @everyone hi"), calls);
+    assertEquals(List.of("send:bob: @everyone hi"), calls);
+  }
+
+  @Test void customFormat() throws Exception {
+    start("a", "**{user}** ({engine}): {text}");
+    result("a", 1, true, "{user} hi");
+    assertEquals(List.of("send:**bob** (a): {user} hi"), calls);
+  }
+
+  @Test void multipleEnginesPrefixWhenFormatLacksEngine() throws Exception {
+    start("a,b", "> {user}: {text}");
+    result("a", 1, true, "x");
+    assertEquals(List.of("send:[a] > bob: x"), calls);
   }
 }

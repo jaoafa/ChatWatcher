@@ -13,7 +13,8 @@ public record Config(
     List<String> engines, Path modelsDir, Path vadModel, List<String> workerEngines, int asrThreads,
     int partialMs, int maxUtteranceMs, int audioTtlMin, int failedAudioTtlMin,
     float vadThreshold, int vadStartMs, int vadEndSilenceMs, int minUtteranceMs, int prerollMs,
-    int retryMax, int retryBackoffMs, String language, int padMs, boolean includeBots, int healthPort) {
+    int retryMax, int retryBackoffMs, String language, int padMs, boolean includeBots, int healthPort,
+    String messageFormat) {
 
   public static Config fromEnv() { return of(System::getenv); }
 
@@ -35,7 +36,8 @@ public record Config(
         i.applyAsInt("VAD_END_SILENCE_MS", 700), i.applyAsInt("MIN_UTTERANCE_MS", 300),
         i.applyAsInt("VAD_PREROLL_MS", 320), i.applyAsInt("RETRY_MAX", 5), i.applyAsInt("RETRY_BACKOFF_MS", 2000),
         s.apply("ASR_LANGUAGE", "ja"), i.applyAsInt("ASR_PAD_MS", 0),
-        Boolean.parseBoolean(s.apply("INCLUDE_BOTS", "true")), i.applyAsInt("HEALTH_PORT", 8080));
+        Boolean.parseBoolean(s.apply("INCLUDE_BOTS", "true")), i.applyAsInt("HEALTH_PORT", 8080),
+        s.apply("MESSAGE_FORMAT", "{user}: {text}"));
   }
 
   public boolean capture() { return !mode.equals("worker"); }

@@ -24,7 +24,7 @@ In Discord, run `/register` once in the text channel where transcripts should go
 
 All commands need the Manage Server permission. Unregistered guilds are never joined or recorded.
 
-Each utterance is posted once per configured engine as `[engine] user: text`, so models can be compared side by side. Use a single engine in production.
+Each utterance is posted as `user: text`. With several engines configured, every engine posts its own message prefixed with `[engine]` so models can be compared side by side. Use a single engine in production.
 
 ## Configuration (environment variables)
 
@@ -32,6 +32,7 @@ Each utterance is posted once per configured engine as `[engine] user: text`, so
 |---|---|---|
 | `MODE` | `all` | `all`, `capture` or `worker`. Split them to scale workers separately; both share `QUEUE_DB` and `AUDIO_DIR` |
 | `ASR_ENGINES` | `sensevoice` | Engines every utterance is sent to (comma separated) |
+| `MESSAGE_FORMAT` | `{user}: {text}` | Format of the posted message; placeholders `{user}`, `{text}`, `{engine}`. With several engines `[engine] ` is prepended unless the format contains `{engine}` |
 | `WORKER_ENGINES` | = `ASR_ENGINES` | One worker thread per entry; `name:N` runs N workers |
 | `ASR_THREADS` | `4` | ONNX threads per worker |
 | `ASR_LANGUAGE` | `ja` | Language hint for SenseVoice / Whisper (empty = auto) |
@@ -71,6 +72,7 @@ Engines were benchmarked on FLEURS (CER for Japanese, WER for English). On 4 cor
 ## Development
 
 ```sh
+scripts/install-sherpa.sh   # once: sherpa-onnx is not on Maven Central, installs its release jars into ~/.m2
 mvn test      # PipelineTest runs only if data/models has sensevoice and test_silero_vad.wav
 mvn package   # target/koemoji.jar
 ```

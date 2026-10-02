@@ -5,10 +5,7 @@ services:
     env_file: .env
     environment:
       MODE: all
-      # every utterance is recognized by every engine and posted as "[engine] user: text"
-      ASR_ENGINES: sensevoice,reazon-ja,reazon-ja-en
-      # one worker thread per entry; name:N runs N workers for that engine
-      WORKER_ENGINES: sensevoice,reazon-ja,reazon-ja-en
+      # engine defaults to sensevoice; set ASR_ENGINES=a,b to compare several (see README)
       ASR_THREADS: 2
       ASR_LANGUAGE: ja
       ASR_PAD_MS: 300

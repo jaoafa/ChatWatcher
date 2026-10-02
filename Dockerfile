@@ -1,7 +1,8 @@
 FROM maven:3-eclipse-temurin-25 AS build
 WORKDIR /src
 COPY pom.xml .
-COPY repo repo
+COPY scripts/install-sherpa.sh scripts/install-sherpa.sh
+RUN scripts/install-sherpa.sh
 COPY src src
 RUN mvn -q -B package -DskipTests
 

@@ -45,3 +45,4 @@ build/
 data/
 ### koemoji ###
 .env
+.idea/

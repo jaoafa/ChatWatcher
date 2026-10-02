@@ -71,6 +71,22 @@ final class Transcripts {
 
   private void settle(String id, Utt u) { if (u.remaining.decrementAndGet() <= 0) utts.remove(id); }
 
+  private static final java.util.regex.Pattern PLACEHOLDER = java.util.regex.Pattern.compile("\\{(user|text|engine)}");
+
+  /** Fills {user}, {text} and {engine} in one pass, so values containing a placeholder are never re-expanded. */
+  String render(String engine, String user, String text) {
+    String fmt = c.messageFormat();
+    // several engines post separate messages; tell them apart even if the format has no {engine}
+    if (c.engines().size() > 1 && !fmt.contains("{engine}")) fmt = "[{engine}] " + fmt;
+    var m = PLACEHOLDER.matcher(fmt);
+    var sb = new StringBuilder();
+    while (m.find()) {
+      String v = switch (m.group(1)) { case "user" -> user; case "text" -> text; default -> engine; };
+      m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(v));
+    }
+    return m.appendTail(sb).toString();
+  }
+
   private void show(String id, Utt u, Msg m, Db.Done d) {
     String text = d.text() == null ? "" : d.text().strip();
     MessageChannel ch = channels.apply(u.channelId);
@@ -83,7 +99,7 @@ final class Transcripts {
       }
       return;
     }
-    String body = "[" + d.engine() + "] " + u.name + ": " + text;
+    String body = render(d.engine(), u.name, text);
     if (body.length() > 2000) body = body.substring(0, 2000);
     m.inflight = true;
     Runnable done = () -> { m.inflight = false; if (fin) settle(id, u); };

@@ -25,5 +25,6 @@ jobs:
           java-version: 25
           distribution: temurin
           cache: maven
+      - run: scripts/install-sherpa.sh
       # PipelineTest is skipped here because it needs the ASR models
       - run: mvn -B verify
