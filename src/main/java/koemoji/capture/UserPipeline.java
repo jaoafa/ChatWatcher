@@ -24,7 +24,7 @@ public final class UserPipeline implements Closeable {
 
   private final Config c;
   private final Db db;
-  private final Consumer<String> onUtterance;  // called with utteranceId before its first job is enqueued
+  private final Consumer<String> onUtterance;  // called with utteranceId right before its first job is enqueued
   private final Vad vad;
   private final float[] win = new float[WIN];
   private int winFill;
@@ -45,6 +45,7 @@ public final class UserPipeline implements Closeable {
   private long bytes, snapBytes;
   private int rev;
   private long lastPartialMs, lastAudioMs;
+  private boolean closed;
 
   public UserPipeline(Config c, Db db, String name, Consumer<String> onUtterance) {
     this.name = name; this.c = c; this.db = db; this.onUtterance = onUtterance;
@@ -55,6 +56,7 @@ public final class UserPipeline implements Closeable {
 
   /** @param pcm big-endian 16-bit stereo 48 kHz (JDA output format) */
   public synchronized void accept(byte[] pcm) {
+    if (closed) return;  // the VAD is native and released by close(); a late packet must not touch it
     long now = System.currentTimeMillis();
     if (now - lastAudioMs > GAP_MS) { winFill = 0; acc = 0; accN = 0; }  // Discord sends nothing while silent
     lastAudioMs = now;
@@ -80,39 +82,52 @@ public final class UserPipeline implements Closeable {
       while (preroll.size() > Math.max(c.prerollMs() / WIN_MS, c.vadStartMs() / WIN_MS)) preroll.removeFirst();
       speechRun = speech ? speechRun + 1 : 0;
       if (speechRun >= Math.max(1, c.vadStartMs() / WIN_MS)) {
-        begin();
-        for (short[] w : preroll) write(w);
+        if (begin()) for (short[] w : preroll) write(w);
         preroll.clear();
+        speechRun = 0;
       }
       return;
     }
     write(cur);
+    if (utt == null) return;  // the write failed and the utterance was dropped
     silenceRun = speech ? 0 : silenceRun + 1;
     if (silenceRun * WIN_MS >= c.vadEndSilenceMs()) finish();
     else if (bytes >= c.maxUtteranceMs() * 32L) { finish(); begin(); }  // keep going as a new utterance
   }
 
-  private void begin() {
-    utt = UUID.randomUUID().toString();
-    path = c.audioDir().resolve(utt + ".pcm");
-    try { out = new BufferedOutputStream(new FileOutputStream(path.toFile())); }
-    catch (IOException e) { throw new UncheckedIOException(e); }
+  /** @return false if the utterance file could not be created (nothing is left open) */
+  private boolean begin() {
+    String id = UUID.randomUUID().toString();
+    Path p = c.audioDir().resolve(id + ".pcm");
+    try { out = new BufferedOutputStream(new FileOutputStream(p.toFile())); }
+    catch (IOException e) { log.warn("cannot create {}; dropping this utterance", p, e); return false; }
+    utt = id; path = p;
     bytes = snapBytes = 0; rev = 0; silenceRun = 0; speechRun = 0;
     lastPartialMs = System.currentTimeMillis();
-    onUtterance.accept(utt);
+    return true;
   }
 
   private void write(short[] w) {
+    if (utt == null) return;
     try {
       var bb = ByteBuffer.allocate(w.length * 2).order(ByteOrder.LITTLE_ENDIAN);
       bb.asShortBuffer().put(w);
       out.write(bb.array());
       bytes += bb.capacity();
-    } catch (IOException e) { throw new UncheckedIOException(e); }
+    } catch (IOException e) { abort(e); }
+  }
+
+  /** Disk trouble: drop the open utterance and wait for the next one instead of failing on every packet. */
+  private void abort(IOException e) {
+    log.warn("utterance file failed; dropping utterance {}", utt, e);
+    try { out.close(); } catch (IOException ignored) {}
+    path.toFile().delete();
+    utt = null; speechRun = 0;
+    vad.reset();
   }
 
   private void finish() {
-    try { out.close(); } catch (IOException e) { throw new UncheckedIOException(e); }
+    try { out.close(); } catch (IOException e) { abort(e); return; }
     if (bytes < c.minUtteranceMs() * 32L) {
       path.toFile().delete();
     } else {
@@ -124,6 +139,7 @@ public final class UserPipeline implements Closeable {
 
   /** One job per configured engine (shadow comparison); revision is shared across engines. */
   private void enqueueAll(boolean fin) {
+    if (rev == 0) onUtterance.accept(utt);  // registered only once a job exists, so dropped blips leave nothing behind
     rev++;
     for (String e : c.engines()) db.enqueue(utt, rev, fin, path.toString(), bytes, e);
   }
@@ -134,7 +150,7 @@ public final class UserPipeline implements Closeable {
     long now = System.currentTimeMillis();
     if (now - lastAudioMs >= c.vadEndSilenceMs()) { finish(); return; }
     if (now - lastPartialMs >= c.partialMs() && bytes > snapBytes) {
-      try { out.flush(); } catch (IOException e) { throw new UncheckedIOException(e); }
+      try { out.flush(); } catch (IOException e) { abort(e); return; }
       snapBytes = bytes; lastPartialMs = now;
       enqueueAll(false);
     }
@@ -146,6 +162,8 @@ public final class UserPipeline implements Closeable {
   }
 
   @Override public synchronized void close() {
+    if (closed) return;
+    closed = true;
     if (utt != null) finish();
     vad.release();
   }

@@ -121,13 +121,21 @@ public final class Db {
     });
   }
 
-  /** Crash recovery: jobs stuck in processing (worker died) go back to the queue. */
-  public int requeueStale(long timeoutMs) {
+  /**
+   * Crash recovery: jobs stuck in processing (worker died) go back to the queue; ones that already used up
+   * retryMax attempts are failed instead, so a job that keeps killing its worker cannot loop forever.
+   */
+  public int requeueStale(long timeoutMs, int retryMax) {
     return tx(c -> {
-      try (var p = c.prepareStatement(
-          "UPDATE jobs SET status='queued', retry_count=retry_count+1 WHERE status='processing' AND started_at<?")) {
-        p.setLong(1, System.currentTimeMillis() - timeoutMs);
-        return p.executeUpdate();
+      long now = System.currentTimeMillis();
+      try (var give = c.prepareStatement(
+               "UPDATE jobs SET status='failed', completed_at=?, error='worker lost' WHERE status='processing' AND started_at<? AND retry_count>=?");
+           var retry = c.prepareStatement(
+               "UPDATE jobs SET status='queued', retry_count=retry_count+1 WHERE status='processing' AND started_at<?")) {
+        give.setLong(1, now); give.setLong(2, now - timeoutMs); give.setInt(3, retryMax);
+        int failed = give.executeUpdate();
+        retry.setLong(1, now - timeoutMs);
+        return failed + retry.executeUpdate();
       }
     });
   }

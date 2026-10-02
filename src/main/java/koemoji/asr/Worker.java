@@ -45,20 +45,16 @@ public final class Worker {
       alive.incrementAndGet();
       up = true;
       while (!Thread.currentThread().isInterrupted()) {
-        var job = db.claim(id, engineName);
-        if (job.isEmpty()) { Thread.sleep(100); continue; }
-        var j = job.get();
         try {
-          float[] pcm = pad(read(j.audioPath(), j.snapshotBytes()), c.padMs());
-          long t = System.nanoTime();
-          String text = j.isFinal() ? engine.recognizeFinal(pcm) : engine.recognizePartial(pcm);
-          long took = System.nanoTime() - t;
-          db.complete(j.id(), id, text);
-          stats.merge(engineName + "|" + (j.isFinal() ? "final" : "partial"), new long[] {1, took},
-              (a, b) -> new long[] {a[0] + b[0], a[1] + b[1]});
+          var job = db.claim(id, engineName);
+          if (job.isEmpty()) { Thread.sleep(100); continue; }
+          run(c, db, id, engine, engineName, job.get());
+        } catch (InterruptedException e) {
+          throw e;
         } catch (Exception e) {
-          log.warn("job {} failed (retry {})", j.id(), j.retryCount(), e);
-          db.fail(j, id, String.valueOf(e), c.retryMax(), c.retryBackoffMs());
+          // transient DB trouble must not kill the thread; a job left in 'processing' is requeued by the reaper
+          log.warn("worker {} iteration failed; retrying", id, e);
+          Thread.sleep(1000);
         }
       }
     } catch (InterruptedException ignored) {
@@ -66,6 +62,21 @@ public final class Worker {
       log.error("worker {} died", id, t);
     } finally {
       if (up) alive.decrementAndGet();
+    }
+  }
+
+  private static void run(Config c, Db db, String id, AsrEngine engine, String engineName, Db.Job j) {
+    try {
+      float[] pcm = pad(read(j.audioPath(), j.snapshotBytes()), c.padMs());
+      long t = System.nanoTime();
+      String text = j.isFinal() ? engine.recognizeFinal(pcm) : engine.recognizePartial(pcm);
+      long took = System.nanoTime() - t;
+      db.complete(j.id(), id, text);
+      stats.merge(engineName + "|" + (j.isFinal() ? "final" : "partial"), new long[] {1, took},
+          (a, b) -> new long[] {a[0] + b[0], a[1] + b[1]});
+    } catch (Exception e) {
+      log.warn("job {} failed (retry {})", j.id(), j.retryCount(), e);
+      db.fail(j, id, String.valueOf(e), c.retryMax(), c.retryBackoffMs());
     }
   }
 
@@ -89,17 +100,22 @@ public final class Worker {
   }
 
   private static void reap(Config c, Db db) throws IOException {
-    int n = db.requeueStale(STALE_MS);
+    int n = db.requeueStale(STALE_MS, c.retryMax());
     if (n > 0) log.warn("requeued {} stale jobs", n);
     for (String[] e : db.expired(c.audioTtlMin() * 60_000L, c.failedAudioTtlMin() * 60_000L)) {
-      Files.deleteIfExists(Path.of(e[1]));
-      db.deleteUtterance(e[0]);
+      try {
+        Files.deleteIfExists(Path.of(e[1]));
+        db.deleteUtterance(e[0]);
+      } catch (IOException ex) { log.warn("could not delete {}", e[1], ex); }  // one bad file must not stop the rest
     }
     // orphans: files never referenced by any job (e.g. capture crashed mid-utterance)
     long cutoff = System.currentTimeMillis() - 3_600_000;
     try (var ls = Files.list(c.audioDir())) {
-      for (Path p : (Iterable<Path>) ls::iterator)
-        if (Files.getLastModifiedTime(p).toMillis() < cutoff && !db.knowsPath(p.toString())) Files.deleteIfExists(p);
+      for (Path p : (Iterable<Path>) ls::iterator) {
+        try {
+          if (Files.getLastModifiedTime(p).toMillis() < cutoff && !db.knowsPath(p.toString())) Files.deleteIfExists(p);
+        } catch (IOException ex) { log.warn("could not clean {}", p, ex); }
+      }
     }
   }
 }

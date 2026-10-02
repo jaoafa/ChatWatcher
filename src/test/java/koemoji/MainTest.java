@@ -24,4 +24,9 @@ class MainTest {
     assertDoesNotThrow(() -> Main.validate(config(java.util.Map.of(
         "MODE", "capture", "ASR_ENGINES", "sensevoice,reazon-ja", "WORKER_ENGINES", "sensevoice"))));
   }
+
+  @Test void validateRejectsUnknownMode() throws Exception {
+    assertThrows(IllegalStateException.class, () -> Main.validate(config(Map.of("MODE", "workers"))));
+    for (String m : new String[] {"all", "capture", "worker"}) assertDoesNotThrow(() -> Main.validate(config(Map.of("MODE", m))));
+  }
 }

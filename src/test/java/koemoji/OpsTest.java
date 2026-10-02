@@ -47,4 +47,19 @@ class OpsTest {
       assertTrue(get(ops, "/metrics").body().contains("koemoji_jobs{engine=\"sensevoice\",status=\"queued\"} 1"));
     } finally { ops.close(); }
   }
+
+  @Test void healthCheckPassesWhenTheHealthServerIsDisabled() throws Exception {
+    assertEquals(0, HealthCheck.check(0));
+  }
+
+  @Test void healthCheckFollowsTheHealthEndpoint() throws Exception {
+    var c = config(java.util.Map.of("MODE", "capture"));
+    var up = new java.util.concurrent.atomic.AtomicBoolean();
+    var ops = new Ops(c, new Db(c), up::get);
+    try {
+      assertEquals(1, HealthCheck.check(ops.port()));
+      up.set(true);
+      assertEquals(0, HealthCheck.check(ops.port()));
+    } finally { ops.close(); }
+  }
 }

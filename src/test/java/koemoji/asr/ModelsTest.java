@@ -64,4 +64,11 @@ class ModelsTest {
     Models.ensure(Config.of(env::get));
     assertFalse(Files.exists(dir.resolve("silero_vad.onnx")));
   }
+
+  @Test void extractAcceptsADestinationThatIsNotNormalized() throws Exception {
+    Path base = Files.createTempDirectory("cwm");
+    Path dest = base.resolve("x/../model");  // like MODELS_DIR=./models
+    Models.extract(new ByteArrayInputStream(archive("top/", null, "top/tokens.txt", "abc")), dest);
+    assertEquals("abc", Files.readString(base.resolve("model/tokens.txt")));
+  }
 }

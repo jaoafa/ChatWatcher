@@ -26,6 +26,8 @@ public final class Main {
 
   /** Fails fast on config that would silently strand jobs: unknown engines, or engines no local worker serves. */
   static void validate(Config c) {
+    if (!java.util.Set.of("all", "capture", "worker").contains(c.mode()))
+      throw new IllegalStateException("MODE must be all, capture or worker: " + c.mode());
     for (String e : java.util.stream.Stream.concat(c.engines().stream(), c.workerEngines().stream()).toList())
       if (!SherpaEngine.DIRS.containsKey(e)) throw new IllegalStateException("Unknown engine: " + e + " (known: " + SherpaEngine.DIRS.keySet() + ")");
     if (c.capture() && c.worker())

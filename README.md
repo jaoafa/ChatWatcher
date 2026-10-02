@@ -46,7 +46,7 @@ Discord 上で、文字起こしを投稿したいテキストチャンネルで
 | `ASR_THREADS` | `4` | ワーカー 1 つあたりの ONNX スレッド数 |
 | `ASR_LANGUAGE` | `ja` | SenseVoice / Whisper への言語ヒント(空なら自動判定) |
 | `INCLUDE_BOTS` | `true` | 他の bot の音声も文字起こしする |
-| `HEALTH_PORT` | `8080` | `/health` と `/metrics` の HTTP ポート(`0` で無効) |
+| `HEALTH_PORT` | `8080` | `/health` と `/metrics` の HTTP ポート(`0` で無効。無効のときは Docker の `HEALTHCHECK` も常に成功します) |
 | `MODELS_DIR`、`VAD_MODEL`、`AUDIO_DIR`、`QUEUE_DB` | `Config.java` 参照 | 各種パス。Docker イメージでは `/data` 以下に設定済みです |
 
 エンジン: `sensevoice`、`reazon-ja`、`reazon-ja-en`、`qwen3-asr`、`whisper-small`、`whisper-turbo`、`parakeet-ja`、`dolphin-small`(`SherpaEngine.DIRS` 参照)。
@@ -83,7 +83,6 @@ Discord 上で、文字起こしを投稿したいテキストチャンネルで
 ## 制限事項
 
 - 1 サーバーで同時に参加できるボイスチャンネルは 1 つです。
-- 接続中に `/register` で投稿先を変えても、すぐには反映されません。`/leave` で一度退出してください。
 
 ## 運用
 

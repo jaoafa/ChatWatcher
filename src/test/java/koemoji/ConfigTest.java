@@ -29,6 +29,8 @@ class ConfigTest {
   }
 
   @Test void invalidNumbersAreRejected() {
-    assertThrows(NumberFormatException.class, () -> of(Map.of("ASR_THREADS", "many")));
+    var e = assertThrows(NumberFormatException.class, () -> of(Map.of("ASR_THREADS", "many")));
+    assertTrue(e.getMessage().contains("ASR_THREADS"));
+    assertTrue(assertThrows(NumberFormatException.class, () -> of(Map.of("VAD_THRESHOLD", "high"))).getMessage().contains("VAD_THRESHOLD"));
   }
 }

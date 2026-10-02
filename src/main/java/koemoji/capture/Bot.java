@@ -29,7 +29,7 @@ import club.minnced.discord.jdave.interop.JDaveSessionFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/** Discord side: auto join/move/leave (jaoafa/ChatWatcher style), /register /join /leave, and per-user audio capture; ASR results are posted by {@link Transcripts}. */
+/** Discord side: auto join/move/leave (jaoafa/ChatWatcher style), /register /unregister /join /leave, and per-user audio capture; ASR results are posted by {@link Transcripts}. */
 public final class Bot extends ListenerAdapter {
   private static final Logger log = LoggerFactory.getLogger(Bot.class);
 
@@ -84,6 +84,8 @@ public final class Bot extends ListenerAdapter {
         var opt = e.getOption("channel");
         long ch = opt != null ? opt.getAsChannel().getIdLong() : e.getChannel().getIdLong();
         db.register(g.getIdLong(), ch);
+        var h = handlers.get(g.getIdLong());
+        if (h != null) h.channelId = ch;  // takes effect for the next utterance without reconnecting
         e.reply("Registered. Transcripts go to <#" + ch + ">; the bot now joins voice channels automatically.").queue();
       }
       case "unregister" -> {
@@ -168,7 +170,7 @@ public final class Bot extends ListenerAdapter {
 
   /** Receives JDA audio and fans it out to per-user pipelines. */
   private final class Handler implements AudioReceiveHandler {
-    private final Guild guild; private final long channelId;
+    private final Guild guild; private volatile long channelId;
     private final Map<Long, UserPipeline> users = new ConcurrentHashMap<>();
     private final Map<Long, String> names = new ConcurrentHashMap<>();
 
@@ -189,7 +191,9 @@ public final class Bot extends ListenerAdapter {
     }
 
     void tick() {
-      users.values().forEach(UserPipeline::tick);
+      users.values().forEach(p -> {
+        try { p.tick(); } catch (Throwable t) { log.warn("tick failed", t); }  // one user must not stop the others
+      });
       users.values().removeIf(p -> {
         if (!p.idle(IDLE_EVICT_MS)) return false;
         p.close();

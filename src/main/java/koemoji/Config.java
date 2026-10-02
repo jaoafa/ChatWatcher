@@ -7,7 +7,7 @@ import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.function.ToIntBiFunction;
 
-/** All tunables come from environment variables; nothing here is hardcoded elsewhere. */
+/** All tunables come from environment variables; the defaults live here. */
 public record Config(
     String mode, String token, Path audioDir, Path queueDb,
     List<String> engines, Path modelsDir, Path vadModel, List<String> workerEngines, int asrThreads,
@@ -23,7 +23,11 @@ public record Config(
       String v = env.apply(k);
       return v == null || v.isBlank() ? d : v;
     };
-    ToIntBiFunction<String, Integer> i = (k, d) -> Integer.parseInt(s.apply(k, Integer.toString(d)));
+    ToIntBiFunction<String, Integer> i = (k, d) -> {
+      String v = s.apply(k, Integer.toString(d));
+      try { return Integer.parseInt(v.trim()); }
+      catch (NumberFormatException e) { throw new NumberFormatException(k + " must be an integer: " + v); }
+    };
     return new Config(
         s.apply("MODE", "all"), env.apply("DISCORD_TOKEN"),
         Path.of(s.apply("AUDIO_DIR", "data/audio")), Path.of(s.apply("QUEUE_DB", "data/queue.db")),
@@ -32,12 +36,17 @@ public record Config(
         workers(s.apply("WORKER_ENGINES", s.apply("ASR_ENGINES", "sensevoice"))), i.applyAsInt("ASR_THREADS", 4),
         i.applyAsInt("PARTIAL_INTERVAL_MS", 2000), i.applyAsInt("MAX_UTTERANCE_MS", 30_000),
         i.applyAsInt("AUDIO_TTL_MIN", 30), i.applyAsInt("FAILED_AUDIO_TTL_MIN", 1440),
-        Float.parseFloat(s.apply("VAD_THRESHOLD", "0.5")), i.applyAsInt("VAD_START_MS", 96),
+        parseFloat("VAD_THRESHOLD", s.apply("VAD_THRESHOLD", "0.5")), i.applyAsInt("VAD_START_MS", 96),
         i.applyAsInt("VAD_END_SILENCE_MS", 700), i.applyAsInt("MIN_UTTERANCE_MS", 300),
         i.applyAsInt("VAD_PREROLL_MS", 320), i.applyAsInt("RETRY_MAX", 5), i.applyAsInt("RETRY_BACKOFF_MS", 2000),
         s.apply("ASR_LANGUAGE", "ja"), i.applyAsInt("ASR_PAD_MS", 0),
         Boolean.parseBoolean(s.apply("INCLUDE_BOTS", "true")), i.applyAsInt("HEALTH_PORT", 8080),
         s.apply("MESSAGE_FORMAT", "{user}: {text}"));
+  }
+
+  private static float parseFloat(String key, String v) {
+    try { return Float.parseFloat(v.trim()); }
+    catch (NumberFormatException e) { throw new NumberFormatException(key + " must be a number: " + v); }
   }
 
   public boolean capture() { return !mode.equals("worker"); }

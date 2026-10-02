@@ -77,14 +77,14 @@ class DbTest {
   @Test void stuckProcessingJobsAreRequeued() {
     enqueue("u1", 1, true, "e");
     db.claim("dead-worker", "e");
-    assertEquals(1, db.requeueStale(-1000));
+    assertEquals(1, db.requeueStale(-1000, 5));
     assertTrue(db.claim("w", "e").isPresent());
   }
 
   @Test void completionByAReapedWorkerIsIgnored() {
     enqueue("u1", 1, true, "e");
     var j = db.claim("w1", "e").get();
-    db.requeueStale(-1000);
+    db.requeueStale(-1000, 5);
     var again = db.claim("w2", "e").get();
     db.complete(j.id(), "w1", "late");
     assertTrue(db.pollDone().isEmpty());
@@ -137,5 +137,13 @@ class DbTest {
     assertNull(db.channelOf(2));
     db.unregister(1);
     assertNull(db.channelOf(1));
+  }
+
+  @Test void staleJobsAreFailedOnceRetriesAreUsedUp() {
+    enqueue("u1", 1, true, "e");
+    db.claim("dead-worker", "e");
+    assertEquals(1, db.requeueStale(-1000, 0));  // retry_count 0 >= retryMax 0: give up instead of requeueing
+    assertTrue(db.claim("w", "e").isEmpty());
+    assertEquals("failed", db.pollDone().get(0).status());
   }
 }

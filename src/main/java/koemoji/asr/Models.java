@@ -66,12 +66,13 @@ public final class Models {
 
   /** Unpacks a .tar.bz2 into dest, dropping the archive's single top-level directory. */
   static void extract(InputStream tarBz2, Path dest) throws IOException {
+    Path root = dest.toAbsolutePath().normalize();  // the traversal check below needs a normalized root
     try (var in = new TarArchiveInputStream(new BZip2CompressorInputStream(new java.io.BufferedInputStream(tarBz2)))) {
       for (TarArchiveEntry e; (e = in.getNextEntry()) != null; ) {
         Path rel = Path.of(e.getName());
         if (rel.getNameCount() < 2) continue;
-        Path out = dest.resolve(rel.subpath(1, rel.getNameCount())).normalize();
-        if (!out.startsWith(dest)) throw new IOException("unsafe path in archive: " + e.getName());
+        Path out = root.resolve(rel.subpath(1, rel.getNameCount())).normalize();
+        if (!out.startsWith(root)) throw new IOException("unsafe path in archive: " + e.getName());
         if (e.isDirectory()) Files.createDirectories(out);
         else if (e.isFile()) { Files.createDirectories(out.getParent()); Files.copy(in, out, StandardCopyOption.REPLACE_EXISTING); }
       }

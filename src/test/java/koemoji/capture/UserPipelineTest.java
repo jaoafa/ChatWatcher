@@ -79,4 +79,20 @@ class UserPipelineTest {
     assertTrue(db.counts().getOrDefault("a|queued", 0L) > 0);
     assertTrue(p.idle(-1));
   }
+
+  @Test void unwritableAudioDirDropsUtterancesWithoutBreakingThePipeline() throws Exception {
+    p.close();
+    var env = Map.of("AUDIO_DIR", Files.createTempDirectory("cwup").resolve("missing").toString(), "ASR_ENGINES", "a");
+    p = new UserPipeline(Config.of(env::get), db, "u", utts::add);
+    assertDoesNotThrow(() -> feed(wav()));
+    p.close();
+    assertTrue(utts.isEmpty());
+    assertTrue(db.counts().isEmpty());
+  }
+
+  @Test void audioArrivingAfterCloseIsIgnored() throws Exception {
+    p.close();
+    assertDoesNotThrow(() -> feed(java.util.Arrays.copyOf(wav(), 16000)));
+    assertTrue(utts.isEmpty());
+  }
 }
