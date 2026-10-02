@@ -9,6 +9,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongFunction;
 import net.dv8tion.jda.api.entities.Message;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
+import net.dv8tion.jda.api.utils.MarkdownSanitizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -87,11 +88,20 @@ final class Transcripts {
     return m.appendTail(sb).toString();
   }
 
+  /** Display names are user-controlled: neutralise Markdown (formatting, masked links, headings) in them. */
+  static String escapeName(String name) {
+    return MarkdownSanitizer.escape(name).replaceAll("([\\[\\]()#>\\-])", "\\\\$1");
+  }
+
   private void show(String id, Utt u, Msg m, Db.Done d) {
     String text = d.text() == null ? "" : d.text().strip();
     MessageChannel ch = channels.apply(u.channelId);
     boolean fin = d.isFinal();
-    if (ch == null) { if (fin) settle(id, u); return; }
+    if (ch == null) {
+      log.warn("transcript channel {} not found; dropping the result of utterance {}", u.channelId, id);
+      if (fin) settle(id, u);
+      return;
+    }
     if (text.isEmpty()) {  // never create an empty message; a final-empty result retracts the partial
       if (fin) {
         if (m.messageId != null) ch.deleteMessageById(m.messageId).queue(null, err -> {});
@@ -99,17 +109,22 @@ final class Transcripts {
       }
       return;
     }
-    String body = render(d.engine(), u.name, text);
+    String body = render(d.engine(), escapeName(u.name), text);
     if (body.length() > 2000) body = body.substring(0, 2000);
     m.inflight = true;
     Runnable done = () -> { m.inflight = false; if (fin) settle(id, u); };
-    if (m.messageId == null) {
-      ch.sendMessage(body).setAllowedMentions(List.of()).queue(
-          (Message sent) -> { m.messageId = sent.getIdLong(); done.run(); },
-          err -> { log.warn("send failed", err); done.run(); });
-    } else {
-      ch.editMessageById(m.messageId, body).setAllowedMentions(List.of()).queue(
-          x -> done.run(), err -> { log.warn("edit failed", err); done.run(); });
+    try {
+      if (m.messageId == null) {
+        ch.sendMessage(body).setAllowedMentions(List.of()).queue(
+            (Message sent) -> { m.messageId = sent.getIdLong(); done.run(); },
+            err -> { log.warn("send failed", err); done.run(); });
+      } else {
+        ch.editMessageById(m.messageId, body).setAllowedMentions(List.of()).queue(
+            x -> done.run(), err -> { log.warn("edit failed", err); done.run(); });
+      }
+    } catch (RuntimeException ex) {  // JDA checks permissions synchronously (e.g. the bot lost Send Messages)
+      log.warn("cannot post to channel {}", u.channelId, ex);
+      done.run();
     }
   }
 }

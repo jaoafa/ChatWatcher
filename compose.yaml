@@ -3,6 +3,9 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    logging:
+      driver: json-file
+      options: {max-size: 10m, max-file: "3"}
     environment:
       MODE: all
       # engine defaults to sensevoice; set ASR_ENGINES=a,b to compare several (see README)

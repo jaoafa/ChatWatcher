@@ -28,19 +28,23 @@ public final class Worker {
 
   public static void start(Config c, Db db) {
     String host = System.getenv().getOrDefault("HOSTNAME", "local") + "-" + ProcessHandle.current().pid();
+    // Engines are built here, before any thread starts, so a missing/invalid model fails the process at startup
+    // (and the restart policy applies) instead of silently killing one worker thread.
     for (int i = 0; i < c.workerEngines().size(); i++) {
-      String id = host + "-" + i, engine = c.workerEngines().get(i);
-      Thread.ofPlatform().daemon().name("asr-" + engine + "-" + i).start(() -> loop(c, db, id, engine));
+      String id = host + "-" + i, name = c.workerEngines().get(i);
+      AsrEngine engine = AsrEngine.create(name, c);
+      Thread.ofPlatform().daemon().name("asr-" + name + "-" + i).start(() -> loop(c, db, id, name, engine));
     }
     var reaper = Executors.newSingleThreadScheduledExecutor(r -> Thread.ofPlatform().daemon().name("reaper").unstarted(r));
     reaper.scheduleWithFixedDelay(() -> {
-      try { reap(c, db); } catch (Exception e) { log.warn("reaper failed", e); }
+      try { reap(c, db); } catch (Throwable t) { log.warn("reaper failed", t); }  // an Error would silently cancel the schedule
     }, 10, 30, TimeUnit.SECONDS);
   }
 
-  private static void loop(Config c, Db db, String id, String engineName) {
+  private static void loop(Config c, Db db, String id, String engineName, AsrEngine engine) {
     boolean up = false;
-    try (AsrEngine engine = AsrEngine.create(engineName, c)) {
+    long backoff = 1000;
+    try (engine) {
       log.info("worker {} ready ({})", id, engine.capabilities());
       alive.incrementAndGet();
       up = true;
@@ -49,17 +53,22 @@ public final class Worker {
           var job = db.claim(id, engineName);
           if (job.isEmpty()) { Thread.sleep(100); continue; }
           run(c, db, id, engine, engineName, job.get());
+          backoff = 1000;
         } catch (InterruptedException e) {
           throw e;
         } catch (Exception e) {
-          // transient DB trouble must not kill the thread; a job left in 'processing' is requeued by the reaper
-          log.warn("worker {} iteration failed; retrying", id, e);
-          Thread.sleep(1000);
+          // transient DB trouble must not kill the thread; a job left in 'processing' is requeued by the reaper.
+          // Backing off keeps a persistent failure from flooding the log.
+          log.warn("worker {} iteration failed; retrying in {} ms", id, backoff, e);
+          Thread.sleep(backoff);
+          backoff = Math.min(backoff * 2, 30_000);
         }
       }
     } catch (InterruptedException ignored) {
     } catch (Throwable t) {
-      log.error("worker {} died", id, t);
+      // an Error (e.g. OOM) must not leave a bot that looks online but transcribes nothing: exit so Docker restarts it
+      log.error("worker {} died; exiting", id, t);
+      System.exit(1);
     } finally {
       if (up) alive.decrementAndGet();
     }
@@ -108,7 +117,7 @@ public final class Worker {
         db.deleteUtterance(e[0]);
       } catch (IOException ex) { log.warn("could not delete {}", e[1], ex); }  // one bad file must not stop the rest
     }
-    // orphans: files never referenced by any job (e.g. capture crashed mid-utterance)
+    // orphans: files never referenced by any job (e.g. capture crashed before the first job was enqueued)
     long cutoff = System.currentTimeMillis() - 3_600_000;
     try (var ls = Files.list(c.audioDir())) {
       for (Path p : (Iterable<Path>) ls::iterator) {

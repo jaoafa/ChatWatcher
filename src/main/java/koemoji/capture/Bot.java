@@ -39,8 +39,8 @@ public final class Bot extends ListenerAdapter {
   private final Db db;
   private final Map<Long, Handler> handlers = new ConcurrentHashMap<>();
   private final ScheduledExecutorService sched = Executors.newScheduledThreadPool(2);
-  private JDA jda;
-  private Transcripts transcripts;
+  private volatile JDA jda;
+  private volatile Transcripts transcripts;
 
   public Bot(Config c, Db db) { this.c = c; this.db = db; }
 
@@ -68,6 +68,8 @@ public final class Bot extends ListenerAdapter {
         Commands.slash("leave", "Leave the voice channel")
             .setContexts(guildOnly).setDefaultPermissions(admin)
     ).queue();
+    // ChatWatcher registered /chatwatcher per guild; koemoji defines only global commands, so clear the old ones
+    jda.getGuilds().forEach(g -> g.updateCommands().queue(null, err -> log.warn("could not clear guild commands of {}", g.getId(), err)));
     transcripts = new Transcripts(c, db, id -> jda.getChannelById(MessageChannel.class, id));
     sched.scheduleWithFixedDelay(() -> guard(() -> handlers.values().forEach(Handler::tick)), 100, 100, TimeUnit.MILLISECONDS);
     sched.scheduleWithFixedDelay(() -> guard(transcripts::apply), 250, 250, TimeUnit.MILLISECONDS);
@@ -200,6 +202,11 @@ public final class Bot extends ListenerAdapter {
         return true;
       });
     }
-    void close() { users.values().forEach(UserPipeline::close); users.clear(); }
+    void close() {
+      users.values().forEach(p -> {
+        try { p.close(); } catch (Throwable t) { log.warn("close failed", t); }  // the remaining users must still be closed
+      });
+      users.clear();
+    }
   }
 }

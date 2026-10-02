@@ -31,8 +31,8 @@ public final class UserPipeline implements Closeable {
   private final ArrayDeque<short[]> preroll = new ArrayDeque<>();
   private final short[] cur = new short[WIN];
 
-  // frame resampler carry (3 input frames -> 1 output sample)
-  private int acc, accN;
+  private static final int DECIMATE = 3;       // 48 kHz -> 16 kHz
+  private int resampleSum, resampleCount;
 
   private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(UserPipeline.class);
   private final String name;
@@ -58,16 +58,16 @@ public final class UserPipeline implements Closeable {
   public synchronized void accept(byte[] pcm) {
     if (closed) return;  // the VAD is native and released by close(); a late packet must not touch it
     long now = System.currentTimeMillis();
-    if (now - lastAudioMs > GAP_MS) { winFill = 0; acc = 0; accN = 0; }  // Discord sends nothing while silent
+    if (now - lastAudioMs > GAP_MS) { winFill = 0; resampleSum = 0; resampleCount = 0; }  // Discord sends nothing while silent
     lastAudioMs = now;
     ByteBuffer b = ByteBuffer.wrap(pcm).order(ByteOrder.BIG_ENDIAN);
     while (b.remaining() >= 4) {
-      acc += (b.getShort() + b.getShort()) / 2;
-      if (++accN == 3) {
-        short s = (short) (acc / 3);
-        acc = 0; accN = 0;
+      resampleSum += (b.getShort() + b.getShort()) / 2;
+      if (++resampleCount == DECIMATE) {
+        short s = (short) (resampleSum / DECIMATE);
+        resampleSum = 0; resampleCount = 0;
         win[winFill] = s / 32768f; cur[winFill] = s;
-        if (++winFill == WIN) { window(); winFill = 0; }
+        if (++winFill == WIN) { winFill = 0; window(); }
       }
     }
   }
@@ -117,24 +117,36 @@ public final class UserPipeline implements Closeable {
     } catch (IOException e) { abort(e); }
   }
 
-  /** Disk trouble: drop the open utterance and wait for the next one instead of failing on every packet. */
+  /**
+   * Disk trouble: stop writing and wait for the next utterance instead of failing on every packet. If partials were
+   * already queued, close the utterance with a final over the flushed prefix so its rows and file are reclaimed
+   * through the normal path; otherwise nothing refers to the file and it is deleted.
+   */
   private void abort(IOException e) {
-    log.warn("utterance file failed; dropping utterance {}", utt, e);
+    log.warn("utterance file failed; closing utterance {}", utt, e);
     try { out.close(); } catch (IOException ignored) {}
-    path.toFile().delete();
-    utt = null; speechRun = 0;
-    vad.reset();
+    try {
+      if (rev > 0) { bytes = snapBytes; enqueueAll(true); }
+      else path.toFile().delete();
+    } catch (RuntimeException ex) {
+      log.warn("could not enqueue a final for utterance {}", utt, ex);
+    } finally {
+      utt = null; speechRun = 0;
+      vad.reset();
+    }
   }
 
   private void finish() {
     try { out.close(); } catch (IOException e) { abort(e); return; }
-    if (bytes < c.minUtteranceMs() * 32L) {
-      path.toFile().delete();
-    } else {
-      enqueueAll(true);
+    try {
+      if (bytes < c.minUtteranceMs() * 32L) path.toFile().delete();
+      else enqueueAll(true);
+    } catch (RuntimeException e) {
+      log.warn("enqueue failed; dropping utterance {}", utt, e);  // file is left for the TTL/orphan sweep
+    } finally {
+      utt = null; speechRun = 0;
+      vad.reset();
     }
-    utt = null; speechRun = 0;
-    vad.reset();
   }
 
   /** One job per configured engine (shadow comparison); revision is shared across engines. */
@@ -164,7 +176,7 @@ public final class UserPipeline implements Closeable {
   @Override public synchronized void close() {
     if (closed) return;
     closed = true;
-    if (utt != null) finish();
-    vad.release();
+    try { if (utt != null) finish(); }
+    finally { vad.release(); }
   }
 }

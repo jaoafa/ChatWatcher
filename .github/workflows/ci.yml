@@ -11,6 +11,10 @@ on:
       - master
   merge_group:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -26,5 +30,5 @@ jobs:
           distribution: temurin
           cache: maven
       - run: scripts/install-sherpa.sh
-      # PipelineTest is skipped here because it needs the ASR models
+      # PipelineTest and UserPipelineTest are skipped here because they need the models and a speech wav under data/models
       - run: mvn -B verify

@@ -104,6 +104,14 @@ class DbTest {
     assertTrue(db.expired(60_000, 60_000).isEmpty());
   }
 
+  @Test void utterancesThatNeverGotAFinalAreReclaimedAfterTheFailedTtl() throws Exception {
+    enqueue("u1", 1, false, "a");
+    db.complete(db.claim("w", "a").get().id(), "w", "x");
+    Thread.sleep(5);
+    assertTrue(db.expired(60_000, 60_000).isEmpty());  // still young: the utterance may be open
+    assertEquals(1, db.expired(0, 0).size());
+  }
+
   @Test void appliedResultsAreNotPolledAgain() {
     enqueue("u1", 1, true, "e");
     db.complete(db.claim("w", "e").get().id(), "w", "x");

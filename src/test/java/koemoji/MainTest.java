@@ -25,6 +25,13 @@ class MainTest {
         "MODE", "capture", "ASR_ENGINES", "sensevoice,reazon-ja", "WORKER_ENGINES", "sensevoice"))));
   }
 
+  @Test void validateRejectsConfigsThatWouldDoNothing() throws Exception {
+    assertThrows(IllegalStateException.class, () -> Main.validate(config(Map.of("ASR_ENGINES", ","))));
+    assertThrows(IllegalStateException.class, () -> Main.validate(config(Map.of("MODE", "worker", "WORKER_ENGINES", "sensevoice:0"))));
+    assertThrows(IllegalStateException.class, () -> Main.validate(config(Map.of("MAX_UTTERANCE_MS", "0"))));
+    assertThrows(IllegalStateException.class, () -> Main.validate(config(Map.of("VAD_END_SILENCE_MS", "0"))));
+  }
+
   @Test void validateRejectsUnknownMode() throws Exception {
     assertThrows(IllegalStateException.class, () -> Main.validate(config(Map.of("MODE", "workers"))));
     for (String m : new String[] {"all", "capture", "worker"}) assertDoesNotThrow(() -> Main.validate(config(Map.of("MODE", m))));

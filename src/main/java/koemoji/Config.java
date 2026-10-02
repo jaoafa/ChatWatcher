@@ -59,7 +59,10 @@ public record Config(
     var out = new ArrayList<String>();
     for (String e : list(v)) {
       String[] p = e.split(":");
-      for (int n = p.length > 1 ? Integer.parseInt(p[1]) : 1; n > 0; n--) out.add(p[0]);
+      int count;
+      try { count = p.length > 1 ? Integer.parseInt(p[1].trim()) : 1; }
+      catch (NumberFormatException ex) { throw new NumberFormatException("WORKER_ENGINES count must be an integer: " + e); }
+      for (int n = count; n > 0; n--) out.add(p[0]);
     }
     return out;
   }

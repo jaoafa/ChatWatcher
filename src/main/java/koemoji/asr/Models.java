@@ -58,7 +58,7 @@ public final class Models {
     try (InputStream in = URI.create(BASE + archive + ".tar.bz2").toURL().openStream()) {
       extract(in, tmp);
     } catch (IOException | RuntimeException ex) {
-      deleteTree(tmp);
+      try { deleteTree(tmp); } catch (IOException cleanup) { ex.addSuppressed(cleanup); }
       throw ex;
     }
     Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE);

@@ -69,11 +69,16 @@ class TranscriptsTest {
     t.register("u1", CHANNEL, "bob");
   }
 
-  /** Enqueues, claims and completes one job, then applies it. */
   private void result(String engine, int rev, boolean fin, String text) {
     db.enqueue("u1", rev, fin, "/x", 1, engine);
     db.complete(db.claim("w", engine).get().id(), "w", text);
     t.apply();
+  }
+
+  @Test void displayNamesCannotInjectMarkdown() {
+    String e = Transcripts.escapeName("[Admin](https://evil.example) # x");
+    assertFalse(e.contains("[Admin]("));
+    assertTrue(e.startsWith("\\["));
   }
 
   @Test void firstResultCreatesTheMessageAndLaterRevisionsEditIt() {

@@ -11,6 +11,7 @@ import java.util.function.BooleanSupplier;
 
 /** Health check and Prometheus-style metrics over plain HTTP (JDK built-in server). */
 final class Ops {
+  private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Ops.class);
   private final HttpServer server;
 
   Ops(Config c, Db db, BooleanSupplier discordConnected) throws IOException {
@@ -22,7 +23,16 @@ final class Ops {
         problem = "workers alive " + Worker.alive() + "/" + c.workerEngines().size();
       reply(ex, problem == null ? 200 : 503, problem == null ? "ok\n" : problem + "\n");
     });
-    server.createContext("/metrics", ex -> reply(ex, 200, metrics(db)));
+    server.createContext("/metrics", ex -> {
+      String body;
+      try { body = metrics(db); }
+      catch (RuntimeException e) {  // the JDK server would only log this at TRACE and drop the connection
+        log.warn("metrics failed", e);
+        reply(ex, 503, "metrics unavailable\n");
+        return;
+      }
+      reply(ex, 200, body);
+    });
     server.start();
   }
 

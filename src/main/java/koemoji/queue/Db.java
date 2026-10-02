@@ -32,6 +32,8 @@ public final class Db {
               worker_id TEXT, error TEXT, text TEXT, applied INTEGER NOT NULL DEFAULT 0)""");
         s.execute("CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status, next_run_at)");
         s.execute("CREATE INDEX IF NOT EXISTS jobs_utt ON jobs(utterance_id)");
+        s.execute("CREATE INDEX IF NOT EXISTS jobs_path ON jobs(audio_path)");
+        s.execute("CREATE INDEX IF NOT EXISTS jobs_unapplied ON jobs(status) WHERE applied=0");
         s.execute("CREATE TABLE IF NOT EXISTS guilds(guild_id INTEGER PRIMARY KEY, channel_id INTEGER NOT NULL)");
       }
       return null;
@@ -163,16 +165,23 @@ public final class Db {
     });
   }
 
-  /** Utterances whose finals all settled longer ago than the TTLs: [utteranceId, audioPath]. */
+  /**
+   * Utterances whose finals all settled longer ago than the TTLs: [utteranceId, audioPath]. An utterance that never
+   * got a final (the process stopped mid-utterance) is reclaimed once its newest job is older than the failed TTL.
+   */
   public List<String[]> expired(long doneTtlMs, long failedTtlMs) {
     return tx(c -> {
       var out = new ArrayList<String[]>();
       long now = System.currentTimeMillis();
       // all engines' finals are settled; the TTL clock starts at the last one (longer TTL if any failed)
       try (var p = c.prepareStatement("""
-          SELECT utterance_id, MIN(audio_path) FROM jobs WHERE is_final=1 GROUP BY utterance_id
-          HAVING SUM(status IN ('queued','processing'))=0 AND MAX(completed_at) < ? - CASE WHEN SUM(status='failed')>0 THEN ? ELSE ? END""")) {
+          SELECT utterance_id, MIN(audio_path) FROM jobs GROUP BY utterance_id
+          HAVING SUM(is_final=1 AND status IN ('queued','processing'))=0 AND CASE
+            WHEN SUM(is_final)>0 THEN MAX(CASE WHEN is_final=1 THEN completed_at END)
+                 < ? - CASE WHEN SUM(is_final=1 AND status='failed')>0 THEN ? ELSE ? END
+            ELSE MAX(created_at) < ? - ? END""")) {
         p.setLong(1, now); p.setLong(2, failedTtlMs); p.setLong(3, doneTtlMs);
+        p.setLong(4, now); p.setLong(5, failedTtlMs);
         try (var r = p.executeQuery()) { while (r.next()) out.add(new String[] {r.getString(1), r.getString(2)}); }
       }
       return out;

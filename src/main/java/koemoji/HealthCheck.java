@@ -5,7 +5,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 
-/** Docker HEALTHCHECK entry point: exit 0 only if /health answers 200. */
+/** Docker HEALTHCHECK entry point: exit 0 if /health answers 200, or if the health server is disabled (HEALTH_PORT <= 0). */
 public final class HealthCheck {
   public static void main(String[] a) throws Exception {
     System.exit(check(Config.fromEnv().healthPort()));

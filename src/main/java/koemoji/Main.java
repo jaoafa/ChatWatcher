@@ -24,10 +24,14 @@ public final class Main {
     Thread.currentThread().join();
   }
 
-  /** Fails fast on config that would silently strand jobs: unknown engines, or engines no local worker serves. */
+  /** Fails fast on config that would silently do nothing or strand jobs: bad MODE, empty or unknown engines, engines no local worker serves. */
   static void validate(Config c) {
     if (!java.util.Set.of("all", "capture", "worker").contains(c.mode()))
       throw new IllegalStateException("MODE must be all, capture or worker: " + c.mode());
+    if (c.engines().isEmpty()) throw new IllegalStateException("ASR_ENGINES must name at least one engine");
+    if (c.worker() && c.workerEngines().isEmpty()) throw new IllegalStateException("WORKER_ENGINES must name at least one worker (count >= 1)");
+    if (c.maxUtteranceMs() <= 0) throw new IllegalStateException("MAX_UTTERANCE_MS must be positive: " + c.maxUtteranceMs());
+    if (c.vadEndSilenceMs() <= 0) throw new IllegalStateException("VAD_END_SILENCE_MS must be positive: " + c.vadEndSilenceMs());
     for (String e : java.util.stream.Stream.concat(c.engines().stream(), c.workerEngines().stream()).toList())
       if (!SherpaEngine.DIRS.containsKey(e)) throw new IllegalStateException("Unknown engine: " + e + " (known: " + SherpaEngine.DIRS.keySet() + ")");
     if (c.capture() && c.worker())

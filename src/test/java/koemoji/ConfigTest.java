@@ -28,6 +28,11 @@ class ConfigTest {
     assertTrue(!of(Map.of("MODE", "worker")).capture() && of(Map.of("MODE", "worker")).worker());
   }
 
+  @Test void workerCountMustBeAnInteger() {
+    var e = assertThrows(NumberFormatException.class, () -> of(Map.of("WORKER_ENGINES", "a:x")));
+    assertTrue(e.getMessage().contains("WORKER_ENGINES"));
+  }
+
   @Test void invalidNumbersAreRejected() {
     var e = assertThrows(NumberFormatException.class, () -> of(Map.of("ASR_THREADS", "many")));
     assertTrue(e.getMessage().contains("ASR_THREADS"));

@@ -95,7 +95,7 @@ Discord 上で、文字起こしを投稿したいテキストチャンネルで
 
 ```sh
 scripts/install-sherpa.sh   # 初回のみ: sherpa-onnx は Maven Central に無いため、リリースの jar を ~/.m2 に入れます
-mvn test      # PipelineTest は data/models に sensevoice と test_silero_vad.wav があるときだけ実行されます
+mvn test      # PipelineTest は data/models に sensevoice と test_silero_vad.wav、UserPipelineTest は silero_vad.onnx と test_silero_vad.wav があるときだけ実行されます(wav は音声を含む 16 kHz モノラル 16-bit の WAV を自分で置きます)
 mvn package   # target/koemoji.jar
 ```
 
