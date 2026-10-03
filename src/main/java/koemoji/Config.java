@@ -37,7 +37,7 @@ public record Config(
         i.applyAsInt("PARTIAL_INTERVAL_MS", 2000), i.applyAsInt("MAX_UTTERANCE_MS", 30_000),
         i.applyAsInt("AUDIO_TTL_MIN", 30), i.applyAsInt("FAILED_AUDIO_TTL_MIN", 1440),
         parseFloat("VAD_THRESHOLD", s.apply("VAD_THRESHOLD", "0.5")), i.applyAsInt("VAD_START_MS", 96),
-        i.applyAsInt("VAD_END_SILENCE_MS", 700), i.applyAsInt("MIN_UTTERANCE_MS", 300),
+        i.applyAsInt("VAD_END_SILENCE_MS", 1000), i.applyAsInt("MIN_UTTERANCE_MS", 300),
         i.applyAsInt("VAD_PREROLL_MS", 320), i.applyAsInt("RETRY_MAX", 5), i.applyAsInt("RETRY_BACKOFF_MS", 2000),
         s.apply("ASR_LANGUAGE", "ja"), i.applyAsInt("ASR_PAD_MS", 0),
         Boolean.parseBoolean(s.apply("INCLUDE_BOTS", "true")), i.applyAsInt("HEALTH_PORT", 8080),

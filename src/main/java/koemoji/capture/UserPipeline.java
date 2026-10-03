@@ -25,7 +25,7 @@ public final class UserPipeline implements Closeable {
   private final Config c;
   private final Db db;
   private final Consumer<String> onUtterance;  // called with utteranceId right before its first job is enqueued
-  private final Vad vad;
+  private final VadDetector vad;
   private final float[] win = new float[WIN];
   private int winFill;
   private final ArrayDeque<short[]> preroll = new ArrayDeque<>();
@@ -48,10 +48,23 @@ public final class UserPipeline implements Closeable {
   private boolean closed;
 
   public UserPipeline(Config c, Db db, String name, Consumer<String> onUtterance) {
+    this(c, db, name, onUtterance, silero(c));
+  }
+
+  UserPipeline(Config c, Db db, String name, Consumer<String> onUtterance, VadDetector vad) {
     this.name = name; this.c = c; this.db = db; this.onUtterance = onUtterance;
+    this.vad = vad;
+  }
+
+  private static VadDetector silero(Config c) {
     var silero = SileroVadModelConfig.builder().setModel(c.vadModel().toString()).setThreshold(c.vadThreshold())
         .setWindowSize(WIN).build();
-    vad = new Vad(VadModelConfig.builder().setSileroVadModelConfig(silero).setSampleRate(16000).setNumThreads(1).setDebug(false).build());
+    var model = new Vad(VadModelConfig.builder().setSileroVadModelConfig(silero).setSampleRate(16000).setNumThreads(1).setDebug(false).build());
+    return new VadDetector() {
+      @Override public float compute(float[] samples) { return model.compute(samples); }
+      @Override public void reset() { model.reset(); }
+      @Override public void release() { model.release(); }
+    };
   }
 
   /** @param pcm big-endian 16-bit stereo 48 kHz (JDA output format) */
@@ -178,5 +191,11 @@ public final class UserPipeline implements Closeable {
     closed = true;
     try { if (utt != null) finish(); }
     finally { vad.release(); }
+  }
+
+  interface VadDetector {
+    float compute(float[] samples);
+    void reset();
+    void release();
   }
 }
