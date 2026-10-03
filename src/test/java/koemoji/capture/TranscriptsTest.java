@@ -9,6 +9,7 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import net.dv8tion.jda.api.entities.Message;
 import net.dv8tion.jda.api.entities.channel.middleman.MessageChannel;
@@ -19,27 +20,38 @@ class TranscriptsTest {
   static final long CHANNEL = 7, FIRST_MESSAGE = 1000;
 
   final List<String> calls = new ArrayList<>();
+  final Map<Long, MessageChannel> destinations = new ConcurrentHashMap<>();
   Db db;
   Transcripts t;
 
   /** Channel double recording sends/edits/deletes; every JDA action chain completes synchronously. */
   private MessageChannel channel() {
+    return channel(CHANNEL, false);
+  }
+
+  private MessageChannel channel(long channelId, boolean fail) {
     return proxy(MessageChannel.class, (self, m, a) -> switch (m.getName()) {
-      case "sendMessage" -> action("send:" + a[0], FIRST_MESSAGE, m.getReturnType());
-      case "editMessageById" -> action("edit:" + a[0] + ":" + a[1], null, m.getReturnType());
-      case "deleteMessageById" -> action("delete:" + a[0], null, m.getReturnType());
+      case "sendMessage" -> action(channelId, "send:" + a[0], FIRST_MESSAGE + (channelId == CHANNEL ? 0 : channelId), m.getReturnType(), fail);
+      case "editMessageById" -> action(channelId, "edit:" + a[0] + ":" + a[1], null, m.getReturnType(), fail);
+      case "deleteMessageById" -> action(channelId, "delete:" + a[0], null, m.getReturnType(), fail);
       default -> null;
     });
   }
 
-  private Object action(String what, Long newId, Class<?> type) {
+  private Object action(long channelId, String what, Long newId, Class<?> type, boolean fail) {
     boolean[] mentionsOff = {false};
     return proxy(type, (self, m, a) -> switch (m.getName()) {
       case "setAllowedMentions" -> { mentionsOff[0] = ((java.util.Collection<?>) a[0]).isEmpty(); yield self; }
       case "queue" -> {
-        calls.add(what + (what.startsWith("delete") || mentionsOff[0] ? "" : " !mentions-allowed"));
-        @SuppressWarnings("unchecked") var ok = (Consumer<Object>) a[0];
-        if (ok != null) ok.accept(newId == null ? null : proxy(Message.class, (s2, m2, a2) -> m2.getName().equals("getIdLong") ? newId : null));
+        calls.add((channelId == CHANNEL ? "" : "channel-" + channelId + ":") + what
+            + (what.startsWith("delete") || mentionsOff[0] ? "" : " !mentions-allowed"));
+        if (fail) {
+          @SuppressWarnings("unchecked") var err = (Consumer<Throwable>) a[1];
+          if (err != null) err.accept(new RuntimeException("denied"));
+        } else {
+          @SuppressWarnings("unchecked") var ok = (Consumer<Object>) a[0];
+          if (ok != null) ok.accept(newId == null ? null : proxy(Message.class, (s2, m2, a2) -> m2.getName().equals("getIdLong") ? newId : null));
+        }
         yield null;
       }
       default -> self;
@@ -64,9 +76,12 @@ class TranscriptsTest {
     if (format != null) { env = new java.util.HashMap<>(env); env.put("MESSAGE_FORMAT", format); }
     var c = Config.of(env::get);
     db = new Db(c);
+    db.register(1, CHANNEL);
     calls.clear();
-    t = new Transcripts(c, db, id -> id == CHANNEL ? channel() : null);
-    t.register("u1", CHANNEL, "bob");
+    destinations.clear();
+    destinations.put(CHANNEL, channel());
+    t = new Transcripts(c, db, destinations::get);
+    t.register("u1", 1, "bob");
   }
 
   private void result(String engine, int rev, boolean fin, String text) {
@@ -110,6 +125,57 @@ class TranscriptsTest {
     result("a", 1, true, "one");
     result("b", 1, true, "two");
     assertEquals(List.of("send:[a] bob: one", "send:[b] bob: two"), calls);
+  }
+
+  @Test void engineRoutesCanShareAChannel() throws Exception {
+    start("a,b");
+    db.register(1, "a", CHANNEL);
+    db.register(1, "b", CHANNEL);
+    t.register("u1", 1, "bob");
+
+    result("a", 1, true, "one");
+    result("b", 1, true, "two");
+
+    assertEquals(List.of("send:[a] bob: one", "send:[b] bob: two"), calls);
+  }
+
+  @Test void routesAreSnapshottedWhenTheUtteranceIsRegistered() throws Exception {
+    start("a");
+    db.register(1, "a", 8);
+    destinations.put(8L, channel(8, false));
+
+    result("a", 1, false, "partial");
+    result("a", 2, true, "final");
+
+    assertEquals(List.of("send:bob: partial", "edit:" + FIRST_MESSAGE + ":bob: final"), calls);
+  }
+
+  @Test void aMissingEngineRouteDoesNotBlockOtherEngines() throws Exception {
+    start("a,b");
+    db.unregister(1);
+    db.register(1, "a", 8);
+    destinations.put(8L, channel(8, false));
+    t.register("u1", 1, "bob");
+
+    result("a", 1, true, "one");
+    result("b", 1, true, "two");
+
+    assertEquals(List.of("channel-8:send:" + "[a] bob: one"), calls);
+  }
+
+  @Test void aFailedEngineChannelDoesNotBlockAnotherEngine() throws Exception {
+    start("a,b");
+    db.unregister(1);
+    db.register(1, "a", 8);
+    db.register(1, "b", 9);
+    destinations.put(8L, channel(8, true));
+    destinations.put(9L, channel(9, false));
+    t.register("u1", 1, "bob");
+
+    result("a", 1, true, "one");
+    result("b", 1, true, "two");
+
+    assertEquals(List.of("channel-8:send:[a] bob: one", "channel-9:send:[b] bob: two"), calls);
   }
 
   @Test void bodiesAreCappedAtDiscordsLimit() {

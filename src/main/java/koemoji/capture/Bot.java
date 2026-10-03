@@ -14,6 +14,7 @@ import net.dv8tion.jda.api.audio.UserAudio;
 import net.dv8tion.jda.api.entities.Guild;
 import net.dv8tion.jda.api.entities.channel.ChannelType;
 import net.dv8tion.jda.api.entities.channel.middleman.AudioChannel;
+import net.dv8tion.jda.api.entities.channel.middleman.GuildMessageChannel;
 import net.dv8tion.jda.api.events.guild.voice.GuildVoiceUpdateEvent;
 import net.dv8tion.jda.api.interactions.commands.OptionType;
 import net.dv8tion.jda.api.interactions.commands.build.OptionData;
@@ -57,9 +58,10 @@ public final class Bot extends ListenerAdapter {
     jda.updateCommands().addCommands(
         Commands.slash("register", "Enable auto-join and post transcripts in a text channel")
             .addOptions(new OptionData(OptionType.CHANNEL, "channel", "Transcript channel (default: this channel)")
-                .setChannelTypes(ChannelType.TEXT, ChannelType.NEWS))
+                    .setChannelTypes(ChannelType.TEXT, ChannelType.NEWS), engineOption("ASR engine destination"))
             .setContexts(guildOnly).setDefaultPermissions(admin),
         Commands.slash("unregister", "Disable auto-join and leave the voice channel")
+            .addOptions(engineOption("ASR engine destination to remove"))
             .setContexts(guildOnly).setDefaultPermissions(admin),
         Commands.slash("join", "Join a voice channel (default: yours)")
             .addOptions(new OptionData(OptionType.CHANNEL, "channel", "Voice channel to join")
@@ -76,6 +78,12 @@ public final class Bot extends ListenerAdapter {
     log.info("bot ready as {}", jda.getSelfUser().getName());
   }
 
+  private OptionData engineOption(String description) {
+    var option = new OptionData(OptionType.STRING, "engine", description, false);
+    c.engines().stream().distinct().forEach(engine -> option.addChoice(engine, engine));
+    return option;
+  }
+
   private static void guard(Runnable r) { try { r.run(); } catch (Throwable t) { log.warn("tick failed", t); } }
 
   @Override public void onSlashCommandInteraction(SlashCommandInteractionEvent e) {
@@ -84,19 +92,31 @@ public final class Bot extends ListenerAdapter {
     switch (e.getName()) {
       case "register" -> {
         var opt = e.getOption("channel");
-        long ch = opt != null ? opt.getAsChannel().getIdLong() : e.getChannel().getIdLong();
-        db.register(g.getIdLong(), ch);
-        var h = handlers.get(g.getIdLong());
-        if (h != null) h.channelId = ch;  // takes effect for the next utterance without reconnecting
-        e.reply("Registered. Transcripts go to <#" + ch + ">; the bot now joins voice channels automatically.").queue();
+        var selected = opt != null ? opt.getAsChannel() : e.getGuildChannel();
+        var bot = g.getSelfMember();
+        if (!(selected instanceof GuildMessageChannel channel)
+            || !canRegisterChannel(g.getIdLong(), channel.getGuild().getIdLong(),
+                bot.hasPermission(channel, Permission.VIEW_CHANNEL),
+                bot.hasPermission(channel, Permission.MESSAGE_SEND))) {
+          e.reply("The bot must be able to view and send messages in that text channel.").setEphemeral(true).queue();
+          return;
+        }
+        var engine = e.getOption("engine");
+        if (engine == null) db.register(g.getIdLong(), channel.getIdLong());
+        else db.register(g.getIdLong(), engine.getAsString(), channel.getIdLong());
+        String target = engine == null ? "the default destination" : "engine `" + engine.getAsString() + "`";
+        e.reply("Registered " + target + " for <#" + channel.getId() + ">; the bot now joins voice channels automatically.").queue();
       }
       case "unregister" -> {
-        db.unregister(g.getIdLong());
-        disconnect(g);
-        e.reply("Unregistered.").queue();
+        var engine = e.getOption("engine");
+        if (engine == null) db.unregister(g.getIdLong());
+        else db.unregister(g.getIdLong(), engine.getAsString());
+        boolean active = db.hasRoutes(g.getIdLong());
+        if (!active) disconnect(g);
+        e.reply(engine == null ? "Unregistered all destinations." : "Unregistered engine `" + engine.getAsString() + "`.").queue();
       }
       case "join" -> {
-        if (db.channelOf(g.getIdLong()) == null) { e.reply("Run /register first.").setEphemeral(true).queue(); return; }
+        if (!db.hasRoutes(g.getIdLong())) { e.reply("Run /register first.").setEphemeral(true).queue(); return; }
         var opt = e.getOption("channel");
         var vs = e.getMember() == null ? null : e.getMember().getVoiceState();
         AudioChannel target = opt != null ? opt.getAsChannel().asAudioChannel() : vs == null ? null : vs.getChannel();
@@ -118,10 +138,13 @@ public final class Bot extends ListenerAdapter {
     }
   }
 
+  static boolean canRegisterChannel(long guildId, long channelGuildId, boolean canView, boolean canSend) {
+    return guildId == channelGuildId && canView && canSend;
+  }
+
   private void connect(Guild g, AudioChannel ch) {
-    Long text = db.channelOf(g.getIdLong());
-    if (text == null) return;
-    Handler h = handlers.computeIfAbsent(g.getIdLong(), id -> new Handler(g, text));
+    if (!db.hasRoutes(g.getIdLong())) return;
+    Handler h = handlers.computeIfAbsent(g.getIdLong(), id -> new Handler(g));
     g.getAudioManager().setReceivingHandler(h);
     g.getAudioManager().openAudioConnection(ch);
   }
@@ -160,7 +183,7 @@ public final class Bot extends ListenerAdapter {
       if (e.getMember().equals(g.getSelfMember()) && e.getChannelJoined() == null) disconnect(g);
       return;
     }
-    if (db.channelOf(g.getIdLong()) == null) return;
+    if (!db.hasRoutes(g.getIdLong())) return;
     AudioChannel from = e.getChannelLeft(), to = e.getChannelJoined(), cur = g.getSelfMember().getVoiceState().getChannel();
     switch (decide(cur != null, cur != null && from != null && from.getIdLong() == cur.getIdLong(),
         to != null, to != null && isAfk(to), cur == null ? 0 : humans(cur), to == null ? 0 : humans(to))) {
@@ -172,11 +195,11 @@ public final class Bot extends ListenerAdapter {
 
   /** Receives JDA audio and fans it out to per-user pipelines. */
   private final class Handler implements AudioReceiveHandler {
-    private final Guild guild; private volatile long channelId;
+    private final Guild guild;
     private final Map<Long, UserPipeline> users = new ConcurrentHashMap<>();
     private final Map<Long, String> names = new ConcurrentHashMap<>();
 
-    Handler(Guild g, long channelId) { this.guild = g; this.channelId = channelId; }
+    Handler(Guild g) { this.guild = g; }
 
     @Override public boolean canReceiveUser() { return true; }
 
@@ -189,7 +212,7 @@ public final class Bot extends ListenerAdapter {
         return m != null ? m.getEffectiveName() : user.getEffectiveName();
       });
       users.computeIfAbsent(uid, k -> new UserPipeline(c, db, names.get(uid),
-          id -> transcripts.register(id, channelId, names.get(uid)))).accept(ua.getAudioData(1.0));
+          id -> transcripts.register(id, guild.getIdLong(), names.get(uid)))).accept(ua.getAudioData(1.0));
     }
 
     void tick() {

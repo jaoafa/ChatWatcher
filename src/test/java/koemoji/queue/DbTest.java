@@ -5,16 +5,20 @@ import koemoji.Config;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.DriverManager;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class DbTest {
   Db db;
+  Path queueDb;
 
   @BeforeEach void setUp() throws Exception {
     var tmp = Files.createTempDirectory("cwdb");
-    var env = Map.of("AUDIO_DIR", tmp.resolve("audio").toString(), "QUEUE_DB", tmp.resolve("q.db").toString());
+    queueDb = tmp.resolve("q.db");
+    var env = Map.of("AUDIO_DIR", tmp.resolve("audio").toString(), "QUEUE_DB", queueDb.toString());
     db = new Db(Config.of(env::get));
   }
 
@@ -145,6 +149,52 @@ class DbTest {
     assertNull(db.channelOf(2));
     db.unregister(1);
     assertNull(db.channelOf(1));
+  }
+
+  @Test void oldGuildRegistrationsMigrateOnceAndDoNotOverwriteNewRoutes() throws Exception {
+    var tmp = Files.createTempDirectory("cwdb-migration");
+    Path file = tmp.resolve("q.db");
+    try (var c = DriverManager.getConnection("jdbc:sqlite:" + file);
+         var s = c.createStatement()) {
+      s.execute("CREATE TABLE guilds(guild_id INTEGER PRIMARY KEY, channel_id INTEGER NOT NULL)");
+      s.execute("INSERT INTO guilds(guild_id, channel_id) VALUES(1, 10)");
+    }
+    var cfg = Config.of(Map.of("AUDIO_DIR", tmp.resolve("audio").toString(), "QUEUE_DB", file.toString())::get);
+    var migrated = new Db(cfg);
+    assertEquals(10L, migrated.channelOf(1));
+
+    migrated.register(1, 11);
+    var restarted = new Db(cfg);
+    assertEquals(11L, restarted.channelOf(1));
+  }
+
+  @Test void engineRoutesOverrideDefaultAndFallBackAfterRemoval() {
+    db.register(1, 10);
+    db.register(1, "a", 11);
+    db.register(2, "b", 22);
+
+    assertEquals(11L, db.routeOf(1, "a"));
+    assertEquals(10L, db.routeOf(1, "b"));
+    assertEquals(Map.of("a", 11L, "b", 10L), db.routesOf(1, java.util.List.of("a", "b")));
+    assertEquals(Map.of("b", 22L), db.routesOf(2, java.util.List.of("a", "b")));
+
+    db.unregister(1, "a");
+    assertEquals(10L, db.routeOf(1, "a"));
+    assertTrue(db.hasRoutes(1));
+    db.unregister(1);
+    assertFalse(db.hasRoutes(1));
+  }
+
+  @Test void engineOnlyRoutesKeepGuildEnabledWithoutChangingOtherRoutes() {
+    db.register(1, "a", 10);
+    db.register(1, "b", 10);
+
+    assertTrue(db.hasRoutes(1));
+    assertNull(db.routeOf(1, "c"));
+    assertEquals(Map.of("a", 10L, "b", 10L), db.routesOf(1, java.util.List.of("a", "b", "c")));
+    db.unregister(1, "a");
+    assertTrue(db.hasRoutes(1));
+    assertEquals(10L, db.routeOf(1, "b"));
   }
 
   @Test void staleJobsAreFailedOnceRetriesAreUsedUp() {
