@@ -15,6 +15,13 @@ class ConfigTest {
     assertEquals(List.of("sensevoice"), c.engines());
     assertEquals("ja", c.language());
     assertTrue(c.includeBots());
+    assertEquals(1000, c.vadEndSilenceMs());
+    assertEquals(300, c.minUtteranceMs());
+  }
+
+  @Test void vadSilenceThresholdCanBeOverridden() {
+    assertEquals(700, of(Map.of("VAD_END_SILENCE_MS", "700")).vadEndSilenceMs());
+    assertEquals(450, of(Map.of("MIN_UTTERANCE_MS", "450")).minUtteranceMs());
   }
 
   @Test void workerEnginesDefaultToAsrEnginesAndExpandCounts() {

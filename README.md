@@ -71,7 +71,7 @@ Discord 上で、文字起こしを投稿したいテキストチャンネルで
 | `PARTIAL_INTERVAL_MS` | `2000` | partial 認識の間隔 |
 | `MAX_UTTERANCE_MS` | `30000` | この長さで発話を確定し、続きを新しい発話として扱います |
 | `VAD_THRESHOLD` | `0.5` | Silero の発話確率のしきい値 |
-| `VAD_START_MS` / `VAD_END_SILENCE_MS` / `VAD_PREROLL_MS` | `96` / `700` / `320` | 発話開始とみなす連続長、発話終了とみなす無音長、開始検出より前に残しておく音声の長さ |
+| `VAD_START_MS` / `VAD_END_SILENCE_MS` / `VAD_PREROLL_MS` | `96` / `1000` / `320` | 発話開始とみなす連続長、発話終了とみなす無音長、開始検出より前に残しておく音声の長さ |
 | `MIN_UTTERANCE_MS` | `300` | これより短い発話は捨てます |
 | `AUDIO_TTL_MIN` / `FAILED_AUDIO_TTL_MIN` | `30` / `1440` | すべての final が確定してから、音声を削除するまでの時間 |
 | `RETRY_MAX` / `RETRY_BACKOFF_MS` | `5` / `2000` | final ジョブの再試行回数と、指数バックオフの基準時間 |
