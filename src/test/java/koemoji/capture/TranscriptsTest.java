@@ -100,7 +100,13 @@ class TranscriptsTest {
     result("a", 1, false, "hello");
     result("a", 2, false, "hello world");
     result("a", 3, true, "Hello, world.");
-    assertEquals(List.of("send:bob: hello", "edit:1000:bob: hello world", "edit:1000:bob: Hello, world."), calls);
+    assertEquals(List.of("send:`bob`: `hello`", "edit:1000:`bob`: `hello world`", "edit:1000:`bob`: `Hello, world.`"), calls);
+  }
+
+  @Test void defaultFormatKeepsMarkdownPunctuationReadableInCodeSpanNames() {
+    t.register("u1", 1, "foo-bar`baz");
+    result("a", 1, true, "hello `there`");
+    assertEquals(List.of("send:`foo-bar｀baz`: `hello ｀there｀`"), calls);
   }
 
   @Test void aLateResultFromAnOlderRevisionIsIgnored() {
@@ -109,7 +115,7 @@ class TranscriptsTest {
     result("a", 2, false, "new");
     db.complete(old.id(), "w", "old");
     t.apply();
-    assertEquals(List.of("send:bob: new"), calls);
+    assertEquals(List.of("send:`bob`: `new`"), calls);
   }
 
   @Test void emptyPartialsPostNothingAndAnEmptyFinalRetractsTheMessage() {
@@ -117,14 +123,14 @@ class TranscriptsTest {
     assertEquals(List.of(), calls);
     result("a", 2, false, "um");
     result("a", 3, true, "");
-    assertEquals(List.of("send:bob: um", "delete:1000"), calls);
+    assertEquals(List.of("send:`bob`: `um`", "delete:1000"), calls);
   }
 
   @Test void eachEngineGetsItsOwnMessage() throws Exception {
     start("a,b");
     result("a", 1, true, "one");
     result("b", 1, true, "two");
-    assertEquals(List.of("send:[a] bob: one", "send:[b] bob: two"), calls);
+    assertEquals(List.of("send:[a] `bob`: `one`", "send:[b] `bob`: `two`"), calls);
   }
 
   @Test void engineRoutesCanShareAChannel() throws Exception {
@@ -136,7 +142,7 @@ class TranscriptsTest {
     result("a", 1, true, "one");
     result("b", 1, true, "two");
 
-    assertEquals(List.of("send:[a] bob: one", "send:[b] bob: two"), calls);
+    assertEquals(List.of("send:[a] `bob`: `one`", "send:[b] `bob`: `two`"), calls);
   }
 
   @Test void routesAreSnapshottedWhenTheUtteranceIsRegistered() throws Exception {
@@ -147,7 +153,7 @@ class TranscriptsTest {
     result("a", 1, false, "partial");
     result("a", 2, true, "final");
 
-    assertEquals(List.of("send:bob: partial", "edit:" + FIRST_MESSAGE + ":bob: final"), calls);
+    assertEquals(List.of("send:`bob`: `partial`", "edit:" + FIRST_MESSAGE + ":`bob`: `final`"), calls);
   }
 
   @Test void aMissingEngineRouteDoesNotBlockOtherEngines() throws Exception {
@@ -160,7 +166,7 @@ class TranscriptsTest {
     result("a", 1, true, "one");
     result("b", 1, true, "two");
 
-    assertEquals(List.of("channel-8:send:" + "[a] bob: one"), calls);
+    assertEquals(List.of("channel-8:send:" + "[a] `bob`: `one`"), calls);
   }
 
   @Test void aFailedEngineChannelDoesNotBlockAnotherEngine() throws Exception {
@@ -175,13 +181,15 @@ class TranscriptsTest {
     result("a", 1, true, "one");
     result("b", 1, true, "two");
 
-    assertEquals(List.of("channel-8:send:[a] bob: one", "channel-9:send:[b] bob: two"), calls);
+    assertEquals(List.of("channel-8:send:[a] `bob`: `one`", "channel-9:send:[b] `bob`: `two`"), calls);
   }
 
   @Test void bodiesAreCappedAtDiscordsLimit() {
     result("a", 1, true, "x".repeat(5000));
     assertEquals(1, calls.size());
     assertEquals(2000, calls.get(0).length() - "send:".length());
+    assertTrue(calls.get(0).endsWith("`"));
+    assertEquals(4, calls.get(0).chars().filter(c -> c == '`').count());
   }
 
   @Test void failedFinalPostsNothing() {
@@ -201,7 +209,7 @@ class TranscriptsTest {
 
   @Test void messagesNeverPingAnyone() {
     result("a", 1, true, "@everyone hi");
-    assertEquals(List.of("send:bob: @everyone hi"), calls);
+    assertEquals(List.of("send:`bob`: `@everyone hi`"), calls);
   }
 
   @Test void customFormat() throws Exception {
