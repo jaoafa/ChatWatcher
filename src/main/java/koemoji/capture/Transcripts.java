@@ -97,6 +97,8 @@ final class Transcripts {
     return MarkdownSanitizer.escape(name).replaceAll("([\\[\\]()#>\\-])", "\\\\$1");
   }
 
+  private static String escapeCodeSpan(String value) { return value.replace('`', '｀'); }
+
   private void show(String id, Utt u, Msg m, Db.Done d) {
     String text = d.text() == null ? "" : d.text().strip();
     Long channelId = u.routes.get(d.engine());
@@ -119,8 +121,13 @@ final class Transcripts {
       }
       return;
     }
-    String body = render(d.engine(), escapeName(u.name), text);
-    if (body.length() > 2000) body = body.substring(0, 2000);
+    boolean defaultFormat = c.messageFormat().equals(Config.DEFAULT_MESSAGE_FORMAT);
+    String user = defaultFormat ? escapeCodeSpan(u.name) : escapeName(u.name);
+    String transcript = defaultFormat ? escapeCodeSpan(text) : text;
+    String body = render(d.engine(), user, transcript);
+    if (body.length() > 2000) {
+      body = defaultFormat ? body.substring(0, 1999) + "`" : body.substring(0, 2000);
+    }
     m.inflight = true;
     Runnable done = () -> { m.inflight = false; if (fin) settle(id, u); };
     try {
