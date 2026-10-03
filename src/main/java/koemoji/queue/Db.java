@@ -9,6 +9,8 @@ import java.util.*;
 
 /** SQLite-backed durable job queue shared by capture and worker processes (WAL, atomic claim). */
 public final class Db {
+  private static final String DEFAULT_ENGINE = "";
+
   public record Job(long id, String utteranceId, int revision, boolean isFinal, String audioPath, long snapshotBytes, int retryCount) {}
   public record Done(long id, String utteranceId, String engine, int revision, boolean isFinal, String status, String text) {}
 
@@ -22,6 +24,7 @@ public final class Db {
     } catch (IOException e) { throw new java.io.UncheckedIOException(e); }
     url = "jdbc:sqlite:" + cfg.queueDb();
     tx(c -> {
+      c.setAutoCommit(false);
       try (Statement s = c.createStatement()) {
         s.execute("""
             CREATE TABLE IF NOT EXISTS jobs(
@@ -35,7 +38,24 @@ public final class Db {
         s.execute("CREATE INDEX IF NOT EXISTS jobs_path ON jobs(audio_path)");
         s.execute("CREATE INDEX IF NOT EXISTS jobs_unapplied ON jobs(status) WHERE applied=0");
         s.execute("CREATE TABLE IF NOT EXISTS guilds(guild_id INTEGER PRIMARY KEY, channel_id INTEGER NOT NULL)");
+        s.execute("CREATE TABLE IF NOT EXISTS guild_channels(guild_id INTEGER NOT NULL, engine TEXT NOT NULL, channel_id INTEGER NOT NULL, PRIMARY KEY(guild_id, engine))");
+        s.execute("CREATE TABLE IF NOT EXISTS schema_migrations(name TEXT PRIMARY KEY)");
       }
+      try (var check = c.prepareStatement("SELECT 1 FROM schema_migrations WHERE name=?")) {
+        check.setString(1, "guild_channels_v1");
+        try (var r = check.executeQuery()) {
+          if (!r.next()) {
+            try (Statement s = c.createStatement()) {
+              s.executeUpdate("INSERT OR IGNORE INTO guild_channels(guild_id, engine, channel_id) SELECT guild_id, '', channel_id FROM guilds");
+            }
+            try (var mark = c.prepareStatement("INSERT INTO schema_migrations(name) VALUES(?)")) {
+              mark.setString(1, "guild_channels_v1");
+              mark.executeUpdate();
+            }
+          }
+        }
+      }
+      c.commit();
       return null;
     });
   }
@@ -216,10 +236,16 @@ public final class Db {
   }
 
   public void register(long guild, long channel) {
+    register(guild, DEFAULT_ENGINE, channel);
+  }
+
+  public void register(long guild, String engine, long channel) {
+    String key = engine == null ? DEFAULT_ENGINE : engine;
     tx(c -> {
-      try (var p = c.prepareStatement("INSERT OR REPLACE INTO guilds(guild_id, channel_id) VALUES(?,?)")) {
+      try (var p = c.prepareStatement("INSERT OR REPLACE INTO guild_channels(guild_id, engine, channel_id) VALUES(?,?,?)")) {
         p.setLong(1, guild);
-        p.setLong(2, channel);
+        p.setString(2, key);
+        p.setLong(3, channel);
         p.executeUpdate();
       }
       return null;
@@ -227,21 +253,65 @@ public final class Db {
   }
 
   public void unregister(long guild) {
+    unregister(guild, null);
+  }
+
+  public void unregister(long guild, String engine) {
     tx(c -> {
-      try (var p = c.prepareStatement("DELETE FROM guilds WHERE guild_id=?")) {
+      try (var p = c.prepareStatement(engine == null
+          ? "DELETE FROM guild_channels WHERE guild_id=?"
+          : "DELETE FROM guild_channels WHERE guild_id=? AND engine=?")) {
         p.setLong(1, guild);
+        if (engine != null) p.setString(2, engine);
         p.executeUpdate();
       }
       return null;
     });
   }
 
-  /** Transcript channel of a registered guild, or null when the guild is not registered. */
+  /** Default transcript channel, or null when the guild has no default route. */
   public Long channelOf(long guild) {
+    return routeOf(guild, null);
+  }
+
+  /** Explicit engine channel, falling back to the guild's default channel. */
+  public Long routeOf(long guild, String engine) {
     return tx(c -> {
-      try (var p = c.prepareStatement("SELECT channel_id FROM guilds WHERE guild_id=?")) {
+      try (var p = c.prepareStatement("SELECT channel_id FROM guild_channels WHERE guild_id=? AND engine IN (?, ?) ORDER BY CASE WHEN engine=? THEN 0 ELSE 1 END LIMIT 1")) {
         p.setLong(1, guild);
+        p.setString(2, engine == null ? DEFAULT_ENGINE : engine);
+        p.setString(3, DEFAULT_ENGINE);
+        p.setString(4, engine == null ? DEFAULT_ENGINE : engine);
         try (var r = p.executeQuery()) { return r.next() ? r.getLong(1) : null; }
+      }
+    });
+  }
+
+  /** Resolved channels for configured engines; engines without a route are absent. */
+  public Map<String, Long> routesOf(long guild, Collection<String> engines) {
+    return tx(c -> {
+      var saved = new HashMap<String, Long>();
+      try (var p = c.prepareStatement("SELECT engine, channel_id FROM guild_channels WHERE guild_id=?")) {
+        p.setLong(1, guild);
+        try (var r = p.executeQuery()) {
+          while (r.next()) saved.put(r.getString(1), r.getLong(2));
+        }
+      }
+      var routes = new HashMap<String, Long>();
+      for (String engine : engines) {
+        Long channel = saved.get(engine);
+        if (channel == null) channel = saved.get(DEFAULT_ENGINE);
+        if (channel != null) routes.put(engine, channel);
+      }
+      return routes;
+    });
+  }
+
+  public boolean hasRoutes(long guild) {
+    return tx(c -> {
+      try (var p = c.prepareStatement("SELECT 1 FROM guild_channels WHERE guild_id=? LIMIT 1")) {
+        p.setLong(1, guild);
+        try (var r = p.executeQuery()) { return r.next(); }
       }
     });
   }

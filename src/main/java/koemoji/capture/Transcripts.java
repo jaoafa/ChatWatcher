@@ -27,11 +27,14 @@ final class Transcripts {
   }
 
   private static final class Utt {
-    final long channelId;
+    final long guildId;
+    final Map<String, Long> routes;
     final String name;
     final Map<String, Msg> msgs = new ConcurrentHashMap<>();
     final AtomicInteger remaining;
-    Utt(long channelId, String name, int engines) { this.channelId = channelId; this.name = name; remaining = new AtomicInteger(engines); }
+    Utt(long guildId, Map<String, Long> routes, String name, int engines) {
+      this.guildId = guildId; this.routes = Map.copyOf(routes); this.name = name; remaining = new AtomicInteger(engines);
+    }
   }
 
   private final Config c;
@@ -41,9 +44,10 @@ final class Transcripts {
 
   Transcripts(Config c, Db db, LongFunction<MessageChannel> channels) { this.c = c; this.db = db; this.channels = channels; }
 
-  /** Must be called before the utterance's first job is enqueued. */
-  void register(String utteranceId, long channelId, String userName) {
-    utts.put(utteranceId, new Utt(channelId, userName, c.engines().size()));
+  /** Captures destination routes before the utterance's first job is enqueued. */
+  void register(String utteranceId, long guildId, String userName) {
+    var engines = new HashSet<>(c.engines());
+    utts.put(utteranceId, new Utt(guildId, db.routesOf(guildId, engines), userName, engines.size()));
   }
 
   /** Applies the newest completed revision per (utterance, engine). */
@@ -95,10 +99,16 @@ final class Transcripts {
 
   private void show(String id, Utt u, Msg m, Db.Done d) {
     String text = d.text() == null ? "" : d.text().strip();
-    MessageChannel ch = channels.apply(u.channelId);
+    Long channelId = u.routes.get(d.engine());
     boolean fin = d.isFinal();
+    if (channelId == null) {
+      log.warn("no transcript channel configured for guild {}, engine {}; dropping utterance {}", u.guildId, d.engine(), id);
+      if (fin) settle(id, u);
+      return;
+    }
+    MessageChannel ch = channels.apply(channelId);
     if (ch == null) {
-      log.warn("transcript channel {} not found; dropping the result of utterance {}", u.channelId, id);
+      log.warn("transcript channel {} not found for guild {}, engine {}; dropping utterance {}", channelId, u.guildId, d.engine(), id);
       if (fin) settle(id, u);
       return;
     }
@@ -117,13 +127,13 @@ final class Transcripts {
       if (m.messageId == null) {
         ch.sendMessage(body).setAllowedMentions(List.of()).queue(
             (Message sent) -> { m.messageId = sent.getIdLong(); done.run(); },
-            err -> { log.warn("send failed", err); done.run(); });
+            err -> { log.warn("send failed for guild {}, engine {}, channel {}", u.guildId, d.engine(), channelId, err); done.run(); });
       } else {
         ch.editMessageById(m.messageId, body).setAllowedMentions(List.of()).queue(
-            x -> done.run(), err -> { log.warn("edit failed", err); done.run(); });
+            x -> done.run(), err -> { log.warn("edit failed for guild {}, engine {}, channel {}", u.guildId, d.engine(), channelId, err); done.run(); });
       }
     } catch (RuntimeException ex) {  // JDA checks permissions synchronously (e.g. the bot lost Send Messages)
-      log.warn("cannot post to channel {}", u.channelId, ex);
+      log.warn("cannot post for guild {}, engine {}, channel {}", u.guildId, d.engine(), channelId, ex);
       done.run();
     }
   }

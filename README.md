@@ -23,7 +23,17 @@ docker compose up -d --build
 
 モデルは初回起動時に `./data/models` へ自動ダウンロードされ、キャッシュされます。事前に全部取得したい場合は `scripts/download-models.sh` を使います。
 
-Discord 上で、文字起こしを投稿したいテキストチャンネルで `/register` を一度実行します(`channel` で投稿先を指定することもできます)。VC への参加方式は jaoafa/ChatWatcher と同じです。
+Discord 上で、文字起こしを投稿したいテキストチャンネルで `/register` を一度実行します(`channel` で投稿先を指定することもできます)。`engine` を選ぶと、その ASR エンジンだけ別のチャンネルへ投稿できます。engine を省略した `/register` は従来どおり default の投稿先を設定し、個別設定のない engine は default を使います。
+
+```text
+/register channel:#koemoji-transcripts
+/register engine:sensevoice channel:#koemoji-sensevoice
+/register engine:reazon-ja channel:#koemoji-reazon-ja
+```
+
+`/unregister engine:<engine>` はその engine の個別設定だけを解除します。default が設定されていれば、その engine は default へ戻ります。engine を省略した `/unregister` は全設定を解除して bot を退出させます。engine 固有設定だけが残っている場合も自動参加します。投稿先がない engine の結果は破棄されます。
+
+選択できる engine は `ASR_ENGINES` に設定したものです。登録時には bot が対象チャンネルを閲覧でき、メッセージを送信できる必要があります。
 
 - **自動参加**: 登録済みサーバーで bot がどの VC にもいないとき、人間が VC に入る(AFK チャンネルを除く)と bot も参加します。
 - **自動移動**: 人間が bot のいるチャンネルから、より人間の多いチャンネルへ移ると bot も追従します。
