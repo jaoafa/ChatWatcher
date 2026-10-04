@@ -6,6 +6,8 @@ import koemoji.Config;
 import koemoji.queue.Db;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.sql.DriverManager;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +23,7 @@ class TranscriptsTest {
 
   final List<String> calls = new ArrayList<>();
   final Map<Long, MessageChannel> destinations = new ConcurrentHashMap<>();
+  Path queueDb;
   Db db;
   Transcripts t;
 
@@ -72,7 +75,8 @@ class TranscriptsTest {
 
   private void start(String engines, String format) throws Exception {
     var tmp = Files.createTempDirectory("cwtr");
-    Map<String, String> env = Map.of("AUDIO_DIR", tmp.resolve("audio").toString(), "QUEUE_DB", tmp.resolve("q.db").toString(), "ASR_ENGINES", engines);
+    queueDb = tmp.resolve("q.db");
+    Map<String, String> env = Map.of("AUDIO_DIR", tmp.resolve("audio").toString(), "QUEUE_DB", queueDb.toString(), "ASR_ENGINES", engines);
     if (format != null) { env = new java.util.HashMap<>(env); env.put("MESSAGE_FORMAT", format); }
     var c = Config.of(env::get);
     db = new Db(c);
@@ -85,7 +89,11 @@ class TranscriptsTest {
   }
 
   private void result(String engine, int rev, boolean fin, String text) {
-    db.enqueue("u1", rev, fin, "/x", 1, engine);
+    resultFor("u1", engine, rev, fin, text);
+  }
+
+  private void resultFor(String utteranceId, String engine, int rev, boolean fin, String text) {
+    db.enqueue(utteranceId, rev, fin, "/x", 1, engine);
     db.complete(db.claim("w", engine).get().id(), "w", text);
     t.apply();
   }
@@ -123,7 +131,67 @@ class TranscriptsTest {
     assertEquals(List.of(), calls);
     result("a", 2, false, "um");
     result("a", 3, true, "");
-    assertEquals(List.of("send:`bob`: `um`", "delete:1000"), calls);
+    t.register("u2", 1, "bob");
+    resultFor("u2", "a", 1, false, "maybe");
+    resultFor("u2", "a", 2, true, "は。");
+    assertEquals(List.of("send:`bob`: `um`", "delete:1000", "send:`bob`: `maybe`", "delete:1000"), calls);
+  }
+
+  @Test void punctuationAndSingleCharacterFullStopFragmentsAreSuppressed() {
+    result("a", 1, true, "。");
+    t.register("u2", 1, "bob");
+    resultFor("u2", "a", 1, true, ".");
+    t.register("u3", 1, "bob");
+    resultFor("u3", "a", 1, true, "？");
+    t.register("u4", 1, "bob");
+    resultFor("u4", "a", 1, true, "?");
+    t.register("u5", 1, "bob");
+    resultFor("u5", "a", 1, true, "は。");
+    t.register("u6", 1, "bob");
+    resultFor("u6", "a", 1, true, "😀。。");
+    assertEquals(List.of(), calls);
+  }
+
+  @Test void whitespaceNormalizationUsesUnicodeWhiteSpace() {
+    result("a", 1, true, "\u001Ctext\u001F");
+    t.register("u2", 1, "bob");
+    resultFor("u2", "a", 1, true, "漢\u001C字");
+    assertEquals(List.of("send:`bob`: `\u001Ctext\u001F`", "send:`bob`: `漢\u001C字`"), calls);
+  }
+
+  @Test void displayTextIsNormalizedWithoutChangingTheStoredAsrText() throws Exception {
+    String source = "\u00A0頭 の 中 に もう 一人 がいる。\u0085";
+    result("a", 1, true, source);
+    t.register("u2", 1, "bob");
+    resultFor("u2", "a", 1, true, "コ ー ヒ ー。");
+    assertEquals(List.of("send:`bob`: `頭の中にもう一人がいる`", "send:`bob`: `コーヒー`"), calls);
+
+    try (var connection = DriverManager.getConnection("jdbc:sqlite:" + queueDb);
+         var query = connection.prepareStatement("SELECT text FROM jobs WHERE utterance_id=?")) {
+      query.setString(1, "u1");
+      try (var rows = query.executeQuery()) {
+        assertTrue(rows.next());
+        assertEquals(source, rows.getString(1));
+      }
+    }
+  }
+
+  @Test void trailingFullStopsAreRemovedAndQuestionMarksInTextArePreserved() {
+    result("a", 1, true, "プレステージ2。。");
+    t.register("u2", 1, "bob");
+    resultFor("u2", "a", 1, true, "この単語は何？");
+    assertEquals(List.of("send:`bob`: `プレステージ2`", "send:`bob`: `この単語は何？`"), calls);
+  }
+
+  @Test void asciiFullStopsAreRemovedOnlyFromJapaneseText() {
+    result("a", 1, true, "U.S.");
+    t.register("u2", 1, "bob");
+    resultFor("u2", "a", 1, true, "Dr.");
+    t.register("u3", 1, "bob");
+    resultFor("u3", "a", 1, true, "これは日本語です.");
+    t.register("u4", 1, "bob");
+    resultFor("u4", "a", 1, true, "コ ー ヒ ー.");
+    assertEquals(List.of("send:`bob`: `U.S.`", "send:`bob`: `Dr.`", "send:`bob`: `これは日本語です`", "send:`bob`: `コーヒー`"), calls);
   }
 
   @Test void eachEngineGetsItsOwnMessage() throws Exception {
