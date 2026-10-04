@@ -197,7 +197,7 @@ public final class Bot extends ListenerAdapter {
   private final class Handler implements AudioReceiveHandler {
     private final Guild guild;
     private final Map<Long, UserPipeline> users = new ConcurrentHashMap<>();
-    private final Map<Long, String> names = new ConcurrentHashMap<>();
+    private final Map<Long, String> usernames = new ConcurrentHashMap<>();
 
     Handler(Guild g) { this.guild = g; }
 
@@ -207,12 +207,9 @@ public final class Bot extends ListenerAdapter {
       var user = ua.getUser();
       if (user.isBot() && !c.includeBots()) return;
       long uid = user.getIdLong();
-      names.computeIfAbsent(uid, k -> {
-        var m = guild.getMember(user);
-        return m != null ? m.getEffectiveName() : user.getEffectiveName();
-      });
-      users.computeIfAbsent(uid, k -> new UserPipeline(c, db, names.get(uid),
-          id -> transcripts.register(id, guild.getIdLong(), names.get(uid)))).accept(ua.getAudioData(1.0));
+      usernames.computeIfAbsent(uid, k -> user.getName());
+      users.computeIfAbsent(uid, k -> new UserPipeline(c, db, usernames.get(uid),
+          id -> transcripts.register(id, guild.getIdLong(), usernames.get(uid)))).accept(ua.getAudioData(1.0));
     }
 
     void tick() {
