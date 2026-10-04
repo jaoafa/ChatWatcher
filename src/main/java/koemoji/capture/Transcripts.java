@@ -79,10 +79,9 @@ final class Transcripts {
   private static final java.util.regex.Pattern PLACEHOLDER = java.util.regex.Pattern.compile("\\{(user|text|engine)}");
 
   /** Fills {user}, {text} and {engine} in one pass, so values containing a placeholder are never re-expanded. */
-  String render(String engine, String user, String text) {
+  String render(String engine, String user, String text, boolean sharesDestination) {
     String fmt = c.messageFormat();
-    // several engines post separate messages; tell them apart even if the format has no {engine}
-    if (c.engines().size() > 1 && !fmt.contains("{engine}")) fmt = "[{engine}] " + fmt;
+    if (sharesDestination && !fmt.contains("{engine}")) fmt = "[{engine}] " + fmt;
     var m = PLACEHOLDER.matcher(fmt);
     var sb = new StringBuilder();
     while (m.find()) {
@@ -124,7 +123,8 @@ final class Transcripts {
     boolean defaultFormat = c.messageFormat().equals(Config.DEFAULT_MESSAGE_FORMAT);
     String user = defaultFormat ? escapeCodeSpan(u.name) : escapeName(u.name);
     String transcript = defaultFormat ? escapeCodeSpan(text) : text;
-    String body = render(d.engine(), user, transcript);
+    boolean sharesDestination = u.routes.values().stream().filter(channelId::equals).count() > 1;
+    String body = render(d.engine(), user, transcript, sharesDestination);
     if (body.length() > 2000) {
       body = defaultFormat ? body.substring(0, 1999) + "`" : body.substring(0, 2000);
     }

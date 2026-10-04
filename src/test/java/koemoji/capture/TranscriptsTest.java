@@ -133,6 +133,20 @@ class TranscriptsTest {
     assertEquals(List.of("send:[a] `bob`: `one`", "send:[b] `bob`: `two`"), calls);
   }
 
+  @Test void enginesRoutedToDifferentChannelsAreNotLabeled() throws Exception {
+    start("a,b");
+    db.register(1, "a", 8);
+    db.register(1, "b", 9);
+    destinations.put(8L, channel(8, false));
+    destinations.put(9L, channel(9, false));
+    t.register("u1", 1, "bob");
+
+    result("a", 1, true, "one");
+    result("b", 1, true, "two");
+
+    assertEquals(List.of("channel-8:send:`bob`: `one`", "channel-9:send:`bob`: `two`"), calls);
+  }
+
   @Test void engineRoutesCanShareAChannel() throws Exception {
     start("a,b");
     db.register(1, "a", CHANNEL);
@@ -166,7 +180,7 @@ class TranscriptsTest {
     result("a", 1, true, "one");
     result("b", 1, true, "two");
 
-    assertEquals(List.of("channel-8:send:" + "[a] `bob`: `one`"), calls);
+    assertEquals(List.of("channel-8:send:" + "`bob`: `one`"), calls);
   }
 
   @Test void aFailedEngineChannelDoesNotBlockAnotherEngine() throws Exception {
@@ -181,7 +195,7 @@ class TranscriptsTest {
     result("a", 1, true, "one");
     result("b", 1, true, "two");
 
-    assertEquals(List.of("channel-8:send:[a] `bob`: `one`", "channel-9:send:[b] `bob`: `two`"), calls);
+    assertEquals(List.of("channel-8:send:`bob`: `one`", "channel-9:send:`bob`: `two`"), calls);
   }
 
   @Test void bodiesAreCappedAtDiscordsLimit() {
@@ -222,5 +236,18 @@ class TranscriptsTest {
     start("a,b", "> {user}: {text}");
     result("a", 1, true, "x");
     assertEquals(List.of("send:[a] > bob: x"), calls);
+  }
+
+  @Test void customFormatCanShowEngineForSeparateChannels() throws Exception {
+    start("a,b", "{engine}: {text}");
+    db.register(1, "a", 8);
+    db.register(1, "b", 9);
+    destinations.put(8L, channel(8, false));
+    destinations.put(9L, channel(9, false));
+    t.register("u1", 1, "bob");
+
+    result("a", 1, true, "one");
+
+    assertEquals(List.of("channel-8:send:a: one"), calls);
   }
 }

@@ -42,7 +42,7 @@ Discord 上で、文字起こしを投稿したいテキストチャンネルで
 
 コマンドはいずれも「サーバーの管理」権限が必要です。未登録のサーバーには参加も録音もしません。
 
-投稿は既定で `` `ユーザー名`: `発言` `` の形式です。複数のエンジンを指定した場合は、エンジンごとに別メッセージとなり、先頭に `[エンジン名]` が付くので、モデルを並べて比較できます。本番運用ではエンジンを 1 つにしてください。
+投稿は既定で `` `ユーザー名`: `発言` `` の形式です。同じ投稿先 channel を共有する複数の engine は、`MESSAGE_FORMAT` に `{engine}` がなければ、区別できるよう先頭に `[engine 名]` が付きます。engine ごとに別 channel へ投稿する場合は channel で区別できるため、自動の engine 名は付きません。`MESSAGE_FORMAT` に `{engine}` を指定すると、別 channel への投稿でも設定した位置に engine 名を表示できます。本番運用では engine を 1 つにしてください。
 
 ## 設定 (環境変数)
 
@@ -51,7 +51,7 @@ Discord 上で、文字起こしを投稿したいテキストチャンネルで
 | `DISCORD_TOKEN` | (必須) | Bot のトークン |
 | `MODE` | `all` | `all`、`capture`、`worker` のいずれか。分けるとワーカーだけをスケールできます。両者は `QUEUE_DB` と `AUDIO_DIR` を共有します |
 | `ASR_ENGINES` | `sensevoice` | すべての発話を送るエンジン(カンマ区切り) |
-| `MESSAGE_FORMAT` | `` `{user}`: `{text}` `` | 投稿メッセージの書式。`{user}`、`{text}`、`{engine}` が使えます。エンジンが複数で書式に `{engine}` が無い場合は、先頭に `[エンジン名] ` が付きます |
+| `MESSAGE_FORMAT` | `` `{user}`: `{text}` `` | 投稿メッセージの書式。`{user}`、`{text}`、`{engine}` が使えます。同じ投稿先 channel を使う engine が複数あり、書式に `{engine}` が無い場合は先頭に `[engine 名] ` が付きます |
 | `WORKER_ENGINES` | `ASR_ENGINES` と同じ | 1 エントリにつきワーカースレッドを 1 つ起動します。`name:N` で N 個 |
 | `ASR_THREADS` | `4` | ワーカー 1 つあたりの ONNX スレッド数 |
 | `ASR_LANGUAGE` | `ja` | SenseVoice / Whisper への言語ヒント(空なら自動判定) |
