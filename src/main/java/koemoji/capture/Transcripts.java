@@ -98,8 +98,117 @@ final class Transcripts {
 
   private static String escapeCodeSpan(String value) { return value.replace('`', '｀'); }
 
+  private static String normalizeForDisplay(String value) {
+    String text = stripUnicodeWhitespace(value == null ? "" : value);
+    text = removeJapaneseCharacterSpaces(text);
+    if (containsOnlyWhitespaceOrPunctuation(text)) return "";
+    if (isSingleCharacterFullStopFragment(text)) return "";
+    while (text.endsWith("。")) {
+      text = text.substring(0, text.length() - 1);
+    }
+    if (containsJapaneseCharacter(text)) {
+      while (text.endsWith(".")) text = text.substring(0, text.length() - 1);
+    }
+    return stripUnicodeWhitespace(text);
+  }
+
+  private static String stripUnicodeWhitespace(String text) {
+    int start = 0, end = text.length();
+    while (start < end) {
+      int codePoint = text.codePointAt(start);
+      if (!isUnicodeWhitespace(codePoint)) break;
+      start += Character.charCount(codePoint);
+    }
+    while (end > start) {
+      int codePoint = text.codePointBefore(end);
+      if (!isUnicodeWhitespace(codePoint)) break;
+      end -= Character.charCount(codePoint);
+    }
+    return text.substring(start, end);
+  }
+
+  private static String removeJapaneseCharacterSpaces(String text) {
+    var result = new StringBuilder(text.length());
+    int index = 0;
+    while (index < text.length()) {
+      int codePoint = text.codePointAt(index);
+      if (!isUnicodeWhitespace(codePoint)) {
+        result.appendCodePoint(codePoint);
+        index += Character.charCount(codePoint);
+        continue;
+      }
+      int start = index;
+      while (index < text.length()) {
+        codePoint = text.codePointAt(index);
+        if (!isUnicodeWhitespace(codePoint)) break;
+        index += Character.charCount(codePoint);
+      }
+      int next = index < text.length() ? text.codePointAt(index) : -1;
+      if (result.length() == 0 || !isJapaneseCharacter(result.codePointBefore(result.length()))
+          || next < 0 || !isJapaneseCharacter(next)) {
+        result.append(text, start, index);
+      }
+    }
+    return result.toString();
+  }
+
+  private static boolean containsOnlyWhitespaceOrPunctuation(String text) {
+    for (int index = 0; index < text.length();) {
+      int codePoint = text.codePointAt(index);
+      if (!isUnicodeWhitespace(codePoint) && !isPunctuation(codePoint)) return false;
+      index += Character.charCount(codePoint);
+    }
+    return true;
+  }
+
+  private static boolean isSingleCharacterFullStopFragment(String text) {
+    int end = text.length();
+    boolean hasFullStop = false;
+    while (end > 0) {
+      int codePoint = text.codePointBefore(end);
+      if (codePoint != '.' && codePoint != '。') break;
+      hasFullStop = true;
+      end -= Character.charCount(codePoint);
+    }
+    if (!hasFullStop) return false;
+    String content = stripUnicodeWhitespace(text.substring(0, end));
+    if (content.codePointCount(0, content.length()) != 1) return false;
+    return !isPunctuation(content.codePointAt(0));
+  }
+
+  private static boolean isUnicodeWhitespace(int codePoint) {
+    return (codePoint >= 0x0009 && codePoint <= 0x000D) || codePoint == 0x0020 || codePoint == 0x0085
+        || Character.isSpaceChar(codePoint);
+  }
+
+  private static boolean containsJapaneseCharacter(String text) {
+    for (int index = 0; index < text.length();) {
+      int codePoint = text.codePointAt(index);
+      if (isJapaneseCharacter(codePoint)) return true;
+      index += Character.charCount(codePoint);
+    }
+    return false;
+  }
+
+  private static boolean isPunctuation(int codePoint) {
+    return switch (Character.getType(codePoint)) {
+      case Character.CONNECTOR_PUNCTUATION, Character.DASH_PUNCTUATION, Character.START_PUNCTUATION,
+          Character.END_PUNCTUATION, Character.INITIAL_QUOTE_PUNCTUATION, Character.FINAL_QUOTE_PUNCTUATION,
+          Character.OTHER_PUNCTUATION -> true;
+      default -> false;
+    };
+  }
+
+  private static boolean isJapaneseCharacter(int codePoint) {
+    if (codePoint == 0x30FC) return true;
+    return switch (Character.UnicodeScript.of(codePoint)) {
+      case HIRAGANA, KATAKANA, HAN -> true;
+      default -> false;
+    };
+  }
+
   private void show(String id, Utt u, Msg m, Db.Done d) {
-    String text = d.text() == null ? "" : d.text().strip();
+    String text = normalizeForDisplay(d.text());
     Long channelId = u.routes.get(d.engine());
     boolean fin = d.isFinal();
     if (channelId == null) {
