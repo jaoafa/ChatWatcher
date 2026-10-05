@@ -10,6 +10,7 @@ import java.nio.ByteOrder;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.UUID;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
@@ -24,7 +25,7 @@ public final class UserPipeline implements Closeable {
 
   private final Config c;
   private final Db db;
-  private final Consumer<String> onUtterance;  // called with utteranceId right before its first job is enqueued
+  private final BiConsumer<String, Long> onUtterance;
   private final VadDetector vad;
   private final float[] win = new float[WIN];
   private int winFill;
@@ -40,6 +41,7 @@ public final class UserPipeline implements Closeable {
   private int winCount;
   private int speechRun, silenceRun;
   private String utt;
+  private long utteranceStartedAtMs;
   private Path path;
   private OutputStream out;
   private long bytes, snapBytes;
@@ -51,7 +53,15 @@ public final class UserPipeline implements Closeable {
     this(c, db, name, onUtterance, silero(c));
   }
 
+  static UserPipeline withUtteranceStartTime(Config c, Db db, String name, BiConsumer<String, Long> onUtterance) {
+    return new UserPipeline(c, db, name, onUtterance, silero(c));
+  }
+
   UserPipeline(Config c, Db db, String name, Consumer<String> onUtterance, VadDetector vad) {
+    this(c, db, name, (id, startedAtMs) -> onUtterance.accept(id), vad);
+  }
+
+  private UserPipeline(Config c, Db db, String name, BiConsumer<String, Long> onUtterance, VadDetector vad) {
     this.name = name; this.c = c; this.db = db; this.onUtterance = onUtterance;
     this.vad = vad;
   }
@@ -114,7 +124,7 @@ public final class UserPipeline implements Closeable {
     Path p = c.audioDir().resolve(id + ".pcm");
     try { out = new BufferedOutputStream(new FileOutputStream(p.toFile())); }
     catch (IOException e) { log.warn("cannot create {}; dropping this utterance", p, e); return false; }
-    utt = id; path = p;
+    utt = id; path = p; utteranceStartedAtMs = System.currentTimeMillis();
     bytes = snapBytes = 0; rev = 0; silenceRun = 0; speechRun = 0;
     lastPartialMs = System.currentTimeMillis();
     return true;
@@ -164,7 +174,7 @@ public final class UserPipeline implements Closeable {
 
   /** One job per configured engine (shadow comparison); revision is shared across engines. */
   private void enqueueAll(boolean fin) {
-    if (rev == 0) onUtterance.accept(utt);  // registered only once a job exists, so dropped blips leave nothing behind
+    if (rev == 0) onUtterance.accept(utt, utteranceStartedAtMs);  // register only once a job exists
     rev++;
     for (String e : c.engines()) db.enqueue(utt, rev, fin, path.toString(), bytes, e);
   }

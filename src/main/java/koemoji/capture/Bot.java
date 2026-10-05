@@ -208,8 +208,9 @@ public final class Bot extends ListenerAdapter {
       if (user.isBot() && !c.includeBots()) return;
       long uid = user.getIdLong();
       usernames.computeIfAbsent(uid, k -> user.getName());
-      users.computeIfAbsent(uid, k -> new UserPipeline(c, db, usernames.get(uid),
-          id -> transcripts.register(id, guild.getIdLong(), usernames.get(uid)))).accept(ua.getAudioData(1.0));
+      users.computeIfAbsent(uid, k -> UserPipeline.withUtteranceStartTime(c, db, usernames.get(uid),
+          (id, startedAtMs) -> transcripts.register(id, guild.getIdLong(), uid, startedAtMs, usernames.get(uid))))
+          .accept(ua.getAudioData(1.0));
     }
 
     void tick() {
