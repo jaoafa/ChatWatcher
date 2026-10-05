@@ -14,26 +14,43 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Turns finished ASR jobs into Discord messages: one message per (utterance, engine), created on the first
- * non-empty result and edited afterwards. Stale revisions are ignored and edits coalesce to the newest result.
+ * Turns finished ASR jobs into Discord messages, grouping nearby utterances from the same user, engine, and channel.
+ * Stale revisions are ignored and edits coalesce to the newest result.
  */
 final class Transcripts {
   private static final Logger log = LoggerFactory.getLogger(Transcripts.class);
+  private static final long JOIN_GRACE_MS = 1_200;
+  private static final long GROUP_RETENTION_MS = 60_000;
 
   private static final class Msg {
+    Group group;
+    int appliedRev;
+  }
+
+  private record GroupKey(long guildId, long userId, String engine, long channelId) {}
+
+  private static final class Group {
     volatile Long messageId;
     volatile boolean inflight;
-    int appliedRev;
+    String stableText = "";
+    String activeText = "";
+    String activeUtteranceId;
+    long lastFinalAt;
+    boolean deletePending;
   }
 
   private static final class Utt {
     final long guildId;
+    final long userId;
+    final long startedAtMs;
     final Map<String, Long> routes;
     final String name;
     final Map<String, Msg> msgs = new ConcurrentHashMap<>();
     final AtomicInteger remaining;
-    Utt(long guildId, Map<String, Long> routes, String name, int engines) {
-      this.guildId = guildId; this.routes = Map.copyOf(routes); this.name = name; remaining = new AtomicInteger(engines);
+    Utt(long guildId, long userId, long startedAtMs, Map<String, Long> routes, String name, int engines) {
+      this.guildId = guildId; this.userId = userId; this.startedAtMs = startedAtMs;
+      this.routes = Map.copyOf(routes); this.name = name;
+      remaining = new AtomicInteger(engines);
     }
   }
 
@@ -41,18 +58,26 @@ final class Transcripts {
   private final Db db;
   private final LongFunction<MessageChannel> channels;
   private final Map<String, Utt> utts = new ConcurrentHashMap<>();
+  private final Map<GroupKey, Group> displayGroups = new ConcurrentHashMap<>();
 
   Transcripts(Config c, Db db, LongFunction<MessageChannel> channels) { this.c = c; this.db = db; this.channels = channels; }
 
   /** Captures destination routes before the utterance's first job is enqueued. */
-  void register(String utteranceId, long guildId, String userName) {
+  void register(String utteranceId, long guildId, long userId, long startedAtMs, String userName) {
     var engines = new HashSet<>(c.engines());
-    utts.put(utteranceId, new Utt(guildId, db.routesOf(guildId, engines), userName, engines.size()));
+    utts.put(utteranceId, new Utt(guildId, userId, startedAtMs, db.routesOf(guildId, engines), userName, engines.size()));
   }
 
   /** Applies the newest completed revision per (utterance, engine). */
   void apply() {
     var done = db.pollDone();
+    long now = System.currentTimeMillis();
+    displayGroups.forEach((key, group) -> {
+      if (group.deletePending && !group.inflight) deleteGroupMessage(key, group);
+    });
+    displayGroups.entrySet().removeIf(e -> !e.getValue().inflight && e.getValue().activeUtteranceId == null
+        && !e.getValue().deletePending && e.getValue().lastFinalAt > 0
+        && now - e.getValue().lastFinalAt > GROUP_RETENTION_MS);
     if (done.isEmpty()) return;
     var groups = new LinkedHashMap<String, List<Db.Done>>();
     for (var d : done) groups.computeIfAbsent(d.utteranceId() + "|" + d.engine(), k -> new ArrayList<>()).add(d);
@@ -62,19 +87,90 @@ final class Transcripts {
       Utt u = utts.get(id);
       if (u == null) { list.forEach(d -> consumed.add(d.id())); return; }
       Msg m = u.msgs.computeIfAbsent(engine, k -> new Msg());
-      if (m.inflight) return;  // rows stay unconsumed; next tick only the newest matters
+      if (m.group != null && m.group.inflight) return;  // rows stay unconsumed; next tick only the newest matters
+      Long channelId = u.routes.get(engine);
+      if (m.group == null && channelId != null) {
+        Group candidate = displayGroups.get(new GroupKey(u.guildId, u.userId, engine, channelId));
+        if (candidate != null && (candidate.inflight || candidate.deletePending
+            || candidate.activeUtteranceId != null && !candidate.activeUtteranceId.equals(id))) return;
+      }
       Db.Done best = list.stream().filter(Db.Done::isFinal).findFirst()
           .orElseGet(() -> list.stream().max(Comparator.comparingInt(Db.Done::revision)).get());
       list.forEach(d -> consumed.add(d.id()));
       if (best.revision() <= m.appliedRev) return;
-      if (best.status().equals("failed")) { if (best.isFinal()) settle(id, u); return; }
+      if (best.status().equals("failed")) {
+        if (best.isFinal()) failFinal(id, u, engine, m, best.createdAt());
+        return;
+      }
       m.appliedRev = best.revision();
-      show(id, u, m, best);
+      show(id, u, engine, m, best);
     });
     db.markApplied(consumed);
   }
 
   private void settle(String id, Utt u) { if (u.remaining.decrementAndGet() <= 0) utts.remove(id); }
+
+  private void failFinal(String id, Utt u, String engine, Msg m, long completedAt) {
+    Group group = m.group;
+    if (group != null && id.equals(group.activeUtteranceId)) {
+      group.activeText = "";
+      group.activeUtteranceId = null;
+      if (!group.stableText.isEmpty()) group.lastFinalAt = completedAt;
+      else {
+        Long channelId = u.routes.get(engine);
+        group.lastFinalAt = completedAt;
+        if (group.messageId != null) group.deletePending = true;
+        else displayGroups.remove(new GroupKey(u.guildId, u.userId, engine, channelId), group);
+      }
+      if (!group.stableText.isEmpty() && group.messageId != null) {
+        Long channelId = u.routes.get(engine);
+        MessageChannel ch = channelId == null ? null : channels.apply(channelId);
+        if (ch != null) {
+          boolean defaultFormat = c.messageFormat().equals(Config.DEFAULT_MESSAGE_FORMAT);
+          String user = defaultFormat ? escapeCodeSpan(u.name) : escapeName(u.name);
+          String text = defaultFormat ? escapeCodeSpan(group.stableText) : group.stableText;
+          boolean sharesDestination = u.routes.values().stream().filter(channelId::equals).count() > 1;
+          String body = render(engine, user, text, sharesDestination);
+          if (body.length() > 2000) body = defaultFormat ? body.substring(0, 1999) + "`" : body.substring(0, 2000);
+          Long messageId = group.messageId;
+          group.inflight = true;
+          try {
+            ch.editMessageById(messageId, body).setAllowedMentions(List.of()).queue(
+                x -> group.inflight = false, err -> group.inflight = false);
+          } catch (RuntimeException ex) {
+            group.inflight = false;
+            log.warn("cannot restore final transcript for guild {}, engine {}, channel {}", u.guildId, engine, channelId, ex);
+          }
+        }
+      }
+    }
+    settle(id, u);
+  }
+
+  private void deleteGroupMessage(GroupKey key, Group group) {
+    if (group.messageId == null) {
+      displayGroups.remove(key, group);
+      group.deletePending = false;
+      return;
+    }
+    MessageChannel ch = channels.apply(key.channelId());
+    if (ch == null) return;
+    Long messageId = group.messageId;
+    group.inflight = true;
+    try {
+      ch.deleteMessageById(messageId).queue(
+          x -> {
+            group.messageId = null;
+            group.deletePending = false;
+            group.inflight = false;
+            displayGroups.remove(key, group);
+          }, err -> group.inflight = false);
+    } catch (RuntimeException ex) {
+      group.inflight = false;
+      log.warn("cannot retract failed transcript for guild {}, engine {}, channel {}",
+          key.guildId(), key.engine(), key.channelId(), ex);
+    }
+  }
 
   private static final java.util.regex.Pattern PLACEHOLDER = java.util.regex.Pattern.compile("\\{(user|text|engine)}");
 
@@ -207,50 +303,113 @@ final class Transcripts {
     };
   }
 
-  private void show(String id, Utt u, Msg m, Db.Done d) {
+  private void show(String id, Utt u, String engine, Msg m, Db.Done d) {
     String text = normalizeForDisplay(d.text());
-    Long channelId = u.routes.get(d.engine());
+    Long channelId = u.routes.get(engine);
     boolean fin = d.isFinal();
     if (channelId == null) {
-      log.warn("no transcript channel configured for guild {}, engine {}; dropping utterance {}", u.guildId, d.engine(), id);
+      log.warn("no transcript channel configured for guild {}, engine {}; dropping utterance {}", u.guildId, engine, id);
       if (fin) settle(id, u);
       return;
     }
     MessageChannel ch = channels.apply(channelId);
     if (ch == null) {
-      log.warn("transcript channel {} not found for guild {}, engine {}; dropping utterance {}", channelId, u.guildId, d.engine(), id);
+      log.warn("transcript channel {} not found for guild {}, engine {}; dropping utterance {}", channelId, u.guildId, engine, id);
       if (fin) settle(id, u);
       return;
     }
-    if (text.isEmpty()) {  // never create an empty message; a final-empty result retracts the partial
+    if (text.isEmpty() && !fin) return;
+
+    Group group = m.group;
+    if (group == null && text.isEmpty()) {
+      if (fin) settle(id, u);
+      return;
+    }
+    if (group == null) {
+      var key = new GroupKey(u.guildId, u.userId, engine, channelId);
+      Group candidate = displayGroups.get(key);
+      long now = System.currentTimeMillis();
+      long gapMs = candidate == null ? Long.MAX_VALUE : u.startedAtMs - candidate.lastFinalAt;
+      if (candidate != null && (candidate.activeUtteranceId != null || candidate.lastFinalAt <= 0
+          || gapMs < 0 || gapMs > JOIN_GRACE_MS)) {
+        displayGroups.remove(key, candidate);
+        candidate = null;
+      }
+      group = candidate == null ? new Group() : candidate;
+      displayGroups.put(key, group);
+      m.group = group;
+    }
+
+    if (!text.isEmpty() && (group.activeUtteranceId == null || !group.activeUtteranceId.equals(id))) {
+      group.activeUtteranceId = id;
+      group.activeText = "";
+    }
+    if (!text.isEmpty()) group.activeText = text;
+
+    boolean defaultFormat = c.messageFormat().equals(Config.DEFAULT_MESSAGE_FORMAT);
+    String user = defaultFormat ? escapeCodeSpan(u.name) : escapeName(u.name);
+    boolean sharesDestination = u.routes.values().stream().filter(channelId::equals).count() > 1;
+    String pendingText = joinText(group.stableText, group.activeText);
+    if (pendingText.length() > 0) {
+      String pendingTranscript = defaultFormat ? escapeCodeSpan(pendingText) : pendingText;
+      String pendingBody = render(engine, user, pendingTranscript, sharesDestination);
+      if (pendingBody.length() > 2000 && !group.stableText.isEmpty()) {
+        group = new Group();
+        group.activeText = text;
+        group.activeUtteranceId = fin ? null : id;
+        m.group = group;
+        displayGroups.put(new GroupKey(u.guildId, u.userId, engine, channelId), group);
+      }
+    }
+
+    if (fin) {
+      if (!text.isEmpty()) group.stableText = joinText(group.stableText, group.activeText);
+      group.activeText = "";
+      group.activeUtteranceId = null;
+      group.lastFinalAt = d.createdAt();
+    }
+
+    String combined = joinText(group.stableText, group.activeText);
+    if (combined.isEmpty()) {
       if (fin) {
-        if (m.messageId != null) ch.deleteMessageById(m.messageId).queue(null, err -> {});
+        if (group.stableText.isEmpty()) {
+          group.deletePending = group.messageId != null;
+          if (group.messageId == null) displayGroups.remove(new GroupKey(u.guildId, u.userId, engine, channelId), group);
+          else deleteGroupMessage(new GroupKey(u.guildId, u.userId, engine, channelId), group);
+        }
         settle(id, u);
       }
       return;
     }
-    boolean defaultFormat = c.messageFormat().equals(Config.DEFAULT_MESSAGE_FORMAT);
-    String user = defaultFormat ? escapeCodeSpan(u.name) : escapeName(u.name);
-    String transcript = defaultFormat ? escapeCodeSpan(text) : text;
-    boolean sharesDestination = u.routes.values().stream().filter(channelId::equals).count() > 1;
-    String body = render(d.engine(), user, transcript, sharesDestination);
-    if (body.length() > 2000) {
-      body = defaultFormat ? body.substring(0, 1999) + "`" : body.substring(0, 2000);
-    }
-    m.inflight = true;
-    Runnable done = () -> { m.inflight = false; if (fin) settle(id, u); };
+
+    String transcript = defaultFormat ? escapeCodeSpan(combined) : combined;
+    String body = render(engine, user, transcript, sharesDestination);
+    if (body.length() > 2000) body = defaultFormat ? body.substring(0, 1999) + "`" : body.substring(0, 2000);
+
+    Group currentGroup = group;
+    currentGroup.inflight = true;
+    Runnable done = () -> { currentGroup.inflight = false; if (fin) settle(id, u); };
     try {
-      if (m.messageId == null) {
+      if (currentGroup.messageId == null) {
         ch.sendMessage(body).setAllowedMentions(List.of()).queue(
-            (Message sent) -> { m.messageId = sent.getIdLong(); done.run(); },
-            err -> { log.warn("send failed for guild {}, engine {}, channel {}", u.guildId, d.engine(), channelId, err); done.run(); });
+            (Message sent) -> { currentGroup.messageId = sent.getIdLong(); done.run(); },
+            err -> { log.warn("send failed for guild {}, engine {}, channel {}", u.guildId, engine, channelId, err); done.run(); });
       } else {
-        ch.editMessageById(m.messageId, body).setAllowedMentions(List.of()).queue(
-            x -> done.run(), err -> { log.warn("edit failed for guild {}, engine {}, channel {}", u.guildId, d.engine(), channelId, err); done.run(); });
+        ch.editMessageById(currentGroup.messageId, body).setAllowedMentions(List.of()).queue(
+            x -> done.run(), err -> { log.warn("edit failed for guild {}, engine {}, channel {}", u.guildId, engine, channelId, err); done.run(); });
       }
     } catch (RuntimeException ex) {  // JDA checks permissions synchronously (e.g. the bot lost Send Messages)
-      log.warn("cannot post for guild {}, engine {}, channel {}", u.guildId, d.engine(), channelId, ex);
+      log.warn("cannot post for guild {}, engine {}, channel {}", u.guildId, engine, channelId, ex);
       done.run();
     }
+  }
+
+  private static String joinText(String left, String right) {
+    if (left.isEmpty()) return right;
+    if (right.isEmpty()) return left;
+    int last = left.codePointBefore(left.length());
+    int first = right.codePointAt(0);
+    if (isPunctuation(last) || isPunctuation(first)) return left + right;
+    return left + "、" + right;
   }
 }

@@ -12,7 +12,8 @@ public final class Db {
   private static final String DEFAULT_ENGINE = "";
 
   public record Job(long id, String utteranceId, int revision, boolean isFinal, String audioPath, long snapshotBytes, int retryCount) {}
-  public record Done(long id, String utteranceId, String engine, int revision, boolean isFinal, String status, String text) {}
+  public record Done(long id, String utteranceId, String engine, int revision, boolean isFinal, String status, String text,
+      long createdAt) {}
 
   public interface Sql<T> { T run(Connection c) throws SQLException; }
 
@@ -166,9 +167,10 @@ public final class Db {
     return tx(c -> {
       var out = new ArrayList<Done>();
       try (var s = c.createStatement(); var r = s.executeQuery("""
-          SELECT job_id, utterance_id, engine, revision, is_final, status, text FROM jobs
+          SELECT job_id, utterance_id, engine, revision, is_final, status, text, created_at FROM jobs
           WHERE applied=0 AND status IN ('completed','failed') ORDER BY job_id""")) {
-        while (r.next()) out.add(new Done(r.getLong(1), r.getString(2), r.getString(3), r.getInt(4), r.getInt(5) == 1, r.getString(6), r.getString(7)));
+        while (r.next()) out.add(new Done(r.getLong(1), r.getString(2), r.getString(3), r.getInt(4), r.getInt(5) == 1,
+            r.getString(6), r.getString(7), r.getLong(8)));
       }
       return out;
     });

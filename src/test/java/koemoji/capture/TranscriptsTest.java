@@ -22,7 +22,9 @@ class TranscriptsTest {
   static final long CHANNEL = 7, FIRST_MESSAGE = 1000;
 
   final List<String> calls = new ArrayList<>();
+  final List<Runnable> pendingActions = new ArrayList<>();
   final Map<Long, MessageChannel> destinations = new ConcurrentHashMap<>();
+  boolean deferActions;
   Path queueDb;
   Db db;
   Transcripts t;
@@ -52,8 +54,13 @@ class TranscriptsTest {
           @SuppressWarnings("unchecked") var err = (Consumer<Throwable>) a[1];
           if (err != null) err.accept(new RuntimeException("denied"));
         } else {
-          @SuppressWarnings("unchecked") var ok = (Consumer<Object>) a[0];
-          if (ok != null) ok.accept(newId == null ? null : proxy(Message.class, (s2, m2, a2) -> m2.getName().equals("getIdLong") ? newId : null));
+          Runnable complete = () -> {
+            @SuppressWarnings("unchecked") var ok = (Consumer<Object>) a[0];
+            if (ok != null) ok.accept(newId == null ? null : proxy(Message.class,
+                (s2, m2, a2) -> m2.getName().equals("getIdLong") ? newId : null));
+          };
+          if (deferActions) pendingActions.add(complete);
+          else complete.run();
         }
         yield null;
       }
@@ -85,11 +92,15 @@ class TranscriptsTest {
     destinations.clear();
     destinations.put(CHANNEL, channel());
     t = new Transcripts(c, db, destinations::get);
-    t.register("u1", 1, "bob");
+    register("u1", 1, "bob");
   }
 
   private void result(String engine, int rev, boolean fin, String text) {
     resultFor("u1", engine, rev, fin, text);
+  }
+
+  private void register(String utteranceId, long guildId, String name) {
+    t.register(utteranceId, guildId, utteranceId.hashCode(), System.currentTimeMillis(), name);
   }
 
   private void resultFor(String utteranceId, String engine, int rev, boolean fin, String text) {
@@ -111,8 +122,100 @@ class TranscriptsTest {
     assertEquals(List.of("send:`bob`: `hello`", "edit:1000:`bob`: `hello world`", "edit:1000:`bob`: `Hello, world.`"), calls);
   }
 
+  @Test void closeUtterancesFromOneUserEditTheSameMessage() throws Exception {
+    t.register("u1", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u1", "a", 1, true, "なんか。");
+    t.register("u2", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u2", "a", 1, true, "これ違うな。");
+
+    assertEquals(List.of("send:`bob`: `なんか`", "edit:1000:`bob`: `なんか、これ違うな`"), calls);
+  }
+
+  @Test void waitsForAnInFlightGroupRequestBeforeApplyingTheNextUtterance() {
+    deferActions = true;
+    t.register("u1", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u1", "a", 1, true, "first");
+    t.register("u2", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u2", "a", 1, true, "second");
+
+    assertEquals(List.of("send:`bob`: `first`"), calls);
+    assertEquals(1, pendingActions.size());
+    pendingActions.removeFirst().run();
+    t.apply();
+
+    assertEquals(List.of("send:`bob`: `first`", "edit:1000:`bob`: `first、second`"), calls);
+  }
+
+  @Test void partialsAndFinalsForTheNextUtteranceUpdateTheJoinedMessage() {
+    t.register("u1", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u1", "a", 1, true, "なんか");
+    t.register("u2", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u2", "a", 1, false, "これ");
+    resultFor("u2", "a", 2, true, "これ違うな");
+    resultFor("u2", "a", 1, false, "古い結果");
+
+    assertEquals(List.of("send:`bob`: `なんか`", "edit:1000:`bob`: `なんか、これ`",
+        "edit:1000:`bob`: `なんか、これ違うな`"), calls);
+  }
+
+  @Test void emptyFinalRestoresThePreviousFinalText() {
+    t.register("u1", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u1", "a", 1, true, "なんか");
+    t.register("u2", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u2", "a", 1, false, "これ");
+    resultFor("u2", "a", 2, true, "");
+
+    assertEquals(List.of("send:`bob`: `なんか`", "edit:1000:`bob`: `なんか、これ`",
+        "edit:1000:`bob`: `なんか`"), calls);
+  }
+
+  @Test void failedFinalRestoresThePreviousFinalText() {
+    t.register("u1", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u1", "a", 1, true, "なんか");
+    t.register("u2", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u2", "a", 1, false, "これ");
+    db.enqueue("u2", 2, true, "/x", 1, "a");
+    db.fail(db.claim("w", "a").orElseThrow(), "w", "failed", 0, 0);
+    t.apply();
+
+    assertEquals(List.of("send:`bob`: `なんか`", "edit:1000:`bob`: `なんか、これ`",
+        "edit:1000:`bob`: `なんか`"), calls);
+  }
+
+  @Test void differentUserIdsNeverShareAMessageEvenWhenNamesMatch() {
+    t.register("u1", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u1", "a", 1, true, "hello");
+    t.register("u2", 1, 43, System.currentTimeMillis(), "bob");
+    resultFor("u2", "a", 1, true, "world");
+
+    assertEquals(List.of("send:`bob`: `hello`", "send:`bob`: `world`"), calls);
+  }
+
+  @Test void utterancesOutsideTheJoinWindowCreateANewMessage() throws Exception {
+    t.register("u1", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u1", "a", 1, true, "hello");
+    Thread.sleep(1250);
+    t.register("u2", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u2", "a", 1, true, "world");
+
+    assertEquals(List.of("send:`bob`: `hello`", "send:`bob`: `world`"), calls);
+  }
+
+  @Test void combinedMessageOverDiscordLimitStartsANewMessage() {
+    t.register("u1", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u1", "a", 1, true, "x".repeat(1500));
+    t.register("u2", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u2", "a", 1, true, "y".repeat(600));
+
+    assertEquals(2, calls.size());
+    assertTrue(calls.get(0).startsWith("send:`bob`: `"));
+    assertTrue(calls.get(1).startsWith("send:`bob`: `"));
+    assertEquals(1509, calls.get(0).length() - "send:".length());
+    assertEquals(609, calls.get(1).length() - "send:".length());
+  }
+
   @Test void defaultFormatKeepsMarkdownPunctuationReadableInCodeSpanNames() {
-    t.register("u1", 1, "foo-bar`baz");
+    register("u1", 1, "foo-bar`baz");
     result("a", 1, true, "hello `there`");
     assertEquals(List.of("send:`foo-bar｀baz`: `hello ｀there｀`"), calls);
   }
@@ -131,7 +234,7 @@ class TranscriptsTest {
     assertEquals(List.of(), calls);
     result("a", 2, false, "um");
     result("a", 3, true, "");
-    t.register("u2", 1, "bob");
+    register("u2", 1, "bob");
     resultFor("u2", "a", 1, false, "maybe");
     resultFor("u2", "a", 2, true, "は。");
     assertEquals(List.of("send:`bob`: `um`", "delete:1000", "send:`bob`: `maybe`", "delete:1000"), calls);
@@ -139,22 +242,22 @@ class TranscriptsTest {
 
   @Test void punctuationAndSingleCharacterFullStopFragmentsAreSuppressed() {
     result("a", 1, true, "。");
-    t.register("u2", 1, "bob");
+    register("u2", 1, "bob");
     resultFor("u2", "a", 1, true, ".");
-    t.register("u3", 1, "bob");
+    register("u3", 1, "bob");
     resultFor("u3", "a", 1, true, "？");
-    t.register("u4", 1, "bob");
+    register("u4", 1, "bob");
     resultFor("u4", "a", 1, true, "?");
-    t.register("u5", 1, "bob");
+    register("u5", 1, "bob");
     resultFor("u5", "a", 1, true, "は。");
-    t.register("u6", 1, "bob");
+    register("u6", 1, "bob");
     resultFor("u6", "a", 1, true, "😀。。");
     assertEquals(List.of(), calls);
   }
 
   @Test void whitespaceNormalizationUsesUnicodeWhiteSpace() {
     result("a", 1, true, "\u001Ctext\u001F");
-    t.register("u2", 1, "bob");
+    register("u2", 1, "bob");
     resultFor("u2", "a", 1, true, "漢\u001C字");
     assertEquals(List.of("send:`bob`: `\u001Ctext\u001F`", "send:`bob`: `漢\u001C字`"), calls);
   }
@@ -162,7 +265,7 @@ class TranscriptsTest {
   @Test void displayTextIsNormalizedWithoutChangingTheStoredAsrText() throws Exception {
     String source = "\u00A0頭 の 中 に もう 一人 がいる。\u0085";
     result("a", 1, true, source);
-    t.register("u2", 1, "bob");
+    register("u2", 1, "bob");
     resultFor("u2", "a", 1, true, "コ ー ヒ ー。");
     assertEquals(List.of("send:`bob`: `頭の中にもう一人がいる`", "send:`bob`: `コーヒー`"), calls);
 
@@ -178,18 +281,18 @@ class TranscriptsTest {
 
   @Test void trailingFullStopsAreRemovedAndQuestionMarksInTextArePreserved() {
     result("a", 1, true, "プレステージ2。。");
-    t.register("u2", 1, "bob");
+    register("u2", 1, "bob");
     resultFor("u2", "a", 1, true, "この単語は何？");
     assertEquals(List.of("send:`bob`: `プレステージ2`", "send:`bob`: `この単語は何？`"), calls);
   }
 
   @Test void asciiFullStopsAreRemovedOnlyFromJapaneseText() {
     result("a", 1, true, "U.S.");
-    t.register("u2", 1, "bob");
+    register("u2", 1, "bob");
     resultFor("u2", "a", 1, true, "Dr.");
-    t.register("u3", 1, "bob");
+    register("u3", 1, "bob");
     resultFor("u3", "a", 1, true, "これは日本語です.");
-    t.register("u4", 1, "bob");
+    register("u4", 1, "bob");
     resultFor("u4", "a", 1, true, "コ ー ヒ ー.");
     assertEquals(List.of("send:`bob`: `U.S.`", "send:`bob`: `Dr.`", "send:`bob`: `これは日本語です`", "send:`bob`: `コーヒー`"), calls);
   }
@@ -207,7 +310,7 @@ class TranscriptsTest {
     db.register(1, "b", 9);
     destinations.put(8L, channel(8, false));
     destinations.put(9L, channel(9, false));
-    t.register("u1", 1, "bob");
+    t.register("u1", 1, 42, System.currentTimeMillis(), "bob");
 
     result("a", 1, true, "one");
     result("b", 1, true, "two");
@@ -219,7 +322,7 @@ class TranscriptsTest {
     start("a,b");
     db.register(1, "a", CHANNEL);
     db.register(1, "b", CHANNEL);
-    t.register("u1", 1, "bob");
+    register("u1", 1, "bob");
 
     result("a", 1, true, "one");
     result("b", 1, true, "two");
@@ -243,7 +346,7 @@ class TranscriptsTest {
     db.unregister(1);
     db.register(1, "a", 8);
     destinations.put(8L, channel(8, false));
-    t.register("u1", 1, "bob");
+    register("u1", 1, "bob");
 
     result("a", 1, true, "one");
     result("b", 1, true, "two");
@@ -258,7 +361,7 @@ class TranscriptsTest {
     db.register(1, "b", 9);
     destinations.put(8L, channel(8, true));
     destinations.put(9L, channel(9, false));
-    t.register("u1", 1, "bob");
+    register("u1", 1, "bob");
 
     result("a", 1, true, "one");
     result("b", 1, true, "two");
@@ -312,7 +415,7 @@ class TranscriptsTest {
     db.register(1, "b", 9);
     destinations.put(8L, channel(8, false));
     destinations.put(9L, channel(9, false));
-    t.register("u1", 1, "bob");
+    register("u1", 1, "bob");
 
     result("a", 1, true, "one");
 
