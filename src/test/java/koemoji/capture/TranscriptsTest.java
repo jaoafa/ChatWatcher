@@ -104,8 +104,13 @@ class TranscriptsTest {
   }
 
   private void resultFor(String utteranceId, String engine, int rev, boolean fin, String text) {
+    resultFor(utteranceId, engine, rev, fin, text, 0, 0);
+  }
+
+  private void resultFor(String utteranceId, String engine, int rev, boolean fin, String text,
+      double logProbabilitySum, int scoredTokenCount) {
     db.enqueue(utteranceId, rev, fin, "/x", 1, engine);
-    db.complete(db.claim("w", engine).get().id(), "w", text);
+    db.complete(db.claim("w", engine).get().id(), "w", text, logProbabilitySum, scoredTokenCount);
     t.apply();
   }
 
@@ -120,6 +125,31 @@ class TranscriptsTest {
     result("a", 2, false, "hello world");
     result("a", 3, true, "Hello, world.");
     assertEquals(List.of("send:`bob`: `hello`", "edit:1000:`bob`: `hello world`", "edit:1000:`bob`: `Hello, world.`"), calls);
+  }
+
+  @Test void scoredPartialsAndFinalsDisplayTheirUpdatedConfidence() {
+    resultFor("u1", "a", 1, false, "partial", 2 * Math.log(0.81), 2);
+    resultFor("u1", "a", 2, true, "final", Math.log(0.64), 1);
+
+    assertEquals(List.of("send:`bob`: `partial` (81%)", "edit:1000:`bob`: `final` (64%)"), calls);
+  }
+
+  @Test void joinedUtterancesAggregateConfidenceByScoredTokenCount() {
+    t.register("u1", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u1", "a", 1, true, "first", Math.log(0.81), 1);
+    t.register("u2", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u2", "a", 1, true, "second", 3 * Math.log(0.64), 3);
+
+    assertEquals(List.of("send:`bob`: `first` (81%)", "edit:1000:`bob`: `first、second` (68%)"), calls);
+  }
+
+  @Test void joinedUtterancesOmitConfidenceWhenAnyResultHasNoScore() {
+    t.register("u1", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u1", "a", 1, true, "first", Math.log(0.81), 1);
+    t.register("u2", 1, 42, System.currentTimeMillis(), "bob");
+    resultFor("u2", "a", 1, true, "second");
+
+    assertEquals(List.of("send:`bob`: `first` (81%)", "edit:1000:`bob`: `first、second`"), calls);
   }
 
   @Test void closeUtterancesFromOneUserEditTheSameMessage() throws Exception {

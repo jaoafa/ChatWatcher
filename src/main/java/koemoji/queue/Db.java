@@ -13,7 +13,7 @@ public final class Db {
 
   public record Job(long id, String utteranceId, int revision, boolean isFinal, String audioPath, long snapshotBytes, int retryCount) {}
   public record Done(long id, String utteranceId, String engine, int revision, boolean isFinal, String status, String text,
-      long createdAt) {}
+      double logProbabilitySum, int scoredTokenCount, long createdAt) {}
 
   public interface Sql<T> { T run(Connection c) throws SQLException; }
 
@@ -51,6 +51,21 @@ public final class Db {
             }
             try (var mark = c.prepareStatement("INSERT INTO schema_migrations(name) VALUES(?)")) {
               mark.setString(1, "guild_channels_v1");
+              mark.executeUpdate();
+            }
+          }
+        }
+      }
+      try (var check = c.prepareStatement("SELECT 1 FROM schema_migrations WHERE name=?")) {
+        check.setString(1, "asr_scores_v1");
+        try (var r = check.executeQuery()) {
+          if (!r.next()) {
+            try (Statement s = c.createStatement()) {
+              s.executeUpdate("ALTER TABLE jobs ADD COLUMN log_probability_sum REAL NOT NULL DEFAULT 0");
+              s.executeUpdate("ALTER TABLE jobs ADD COLUMN scored_token_count INTEGER NOT NULL DEFAULT 0");
+            }
+            try (var mark = c.prepareStatement("INSERT INTO schema_migrations(name) VALUES(?)")) {
+              mark.setString(1, "asr_scores_v1");
               mark.executeUpdate();
             }
           }
@@ -120,10 +135,15 @@ public final class Db {
 
   /** Only the worker that claimed the job may settle it; a reaped worker's late result is ignored. */
   public void complete(long id, String worker, String text) {
+    complete(id, worker, text, 0, 0);
+  }
+
+  public void complete(long id, String worker, String text, double logProbabilitySum, int scoredTokenCount) {
     tx(c -> {
       try (var p = c.prepareStatement(
-          "UPDATE jobs SET status='completed', text=?, completed_at=? WHERE job_id=? AND status='processing' AND worker_id=?")) {
-        p.setString(1, text); p.setLong(2, System.currentTimeMillis()); p.setLong(3, id); p.setString(4, worker); p.executeUpdate();
+          "UPDATE jobs SET status='completed', text=?, log_probability_sum=?, scored_token_count=?, completed_at=? WHERE job_id=? AND status='processing' AND worker_id=?")) {
+        p.setString(1, text); p.setDouble(2, logProbabilitySum); p.setInt(3, scoredTokenCount);
+        p.setLong(4, System.currentTimeMillis()); p.setLong(5, id); p.setString(6, worker); p.executeUpdate();
       }
       return null;
     });
@@ -167,10 +187,10 @@ public final class Db {
     return tx(c -> {
       var out = new ArrayList<Done>();
       try (var s = c.createStatement(); var r = s.executeQuery("""
-          SELECT job_id, utterance_id, engine, revision, is_final, status, text, created_at FROM jobs
+          SELECT job_id, utterance_id, engine, revision, is_final, status, text, log_probability_sum, scored_token_count, created_at FROM jobs
           WHERE applied=0 AND status IN ('completed','failed') ORDER BY job_id""")) {
         while (r.next()) out.add(new Done(r.getLong(1), r.getString(2), r.getString(3), r.getInt(4), r.getInt(5) == 1,
-            r.getString(6), r.getString(7), r.getLong(8)));
+            r.getString(6), r.getString(7), r.getDouble(8), r.getInt(9), r.getLong(10)));
       }
       return out;
     });

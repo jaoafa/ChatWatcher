@@ -78,9 +78,9 @@ public final class Worker {
     try {
       float[] pcm = pad(read(j.audioPath(), j.snapshotBytes()), c.padMs());
       long t = System.nanoTime();
-      String text = j.isFinal() ? engine.recognizeFinal(pcm) : engine.recognizePartial(pcm);
+      AsrEngine.Result result = j.isFinal() ? engine.recognizeFinal(pcm) : engine.recognizePartial(pcm);
       long took = System.nanoTime() - t;
-      db.complete(j.id(), id, text);
+      db.complete(j.id(), id, result.text(), result.logProbabilitySum(), result.scoredTokenCount());
       stats.merge(engineName + "|" + (j.isFinal() ? "final" : "partial"), new long[] {1, took},
           (a, b) -> new long[] {a[0] + b[0], a[1] + b[1]});
     } catch (Exception e) {
