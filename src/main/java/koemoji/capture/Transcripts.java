@@ -34,6 +34,12 @@ final class Transcripts {
     volatile boolean inflight;
     String stableText = "";
     String activeText = "";
+    double stableLogProbabilitySum;
+    int stableScoredTokenCount;
+    boolean stableScoreAvailable = true;
+    double activeLogProbabilitySum;
+    int activeScoredTokenCount;
+    boolean activeScoreAvailable;
     String activeUtteranceId;
     long lastFinalAt;
     boolean deletePending;
@@ -114,6 +120,9 @@ final class Transcripts {
     Group group = m.group;
     if (group != null && id.equals(group.activeUtteranceId)) {
       group.activeText = "";
+      group.activeLogProbabilitySum = 0;
+      group.activeScoredTokenCount = 0;
+      group.activeScoreAvailable = false;
       group.activeUtteranceId = null;
       if (!group.stableText.isEmpty()) group.lastFinalAt = completedAt;
       else {
@@ -130,8 +139,7 @@ final class Transcripts {
           String user = defaultFormat ? escapeCodeSpan(u.name) : escapeName(u.name);
           String text = defaultFormat ? escapeCodeSpan(group.stableText) : group.stableText;
           boolean sharesDestination = u.routes.values().stream().filter(channelId::equals).count() > 1;
-          String body = render(engine, user, text, sharesDestination);
-          if (body.length() > 2000) body = defaultFormat ? body.substring(0, 1999) + "`" : body.substring(0, 2000);
+          String body = renderMessage(engine, user, text, sharesDestination, group, defaultFormat);
           Long messageId = group.messageId;
           group.inflight = true;
           try {
@@ -185,6 +193,27 @@ final class Transcripts {
       m.appendReplacement(sb, java.util.regex.Matcher.quoteReplacement(v));
     }
     return m.appendTail(sb).toString();
+  }
+
+  private String renderMessage(String engine, String user, String text, boolean sharesDestination,
+      Group group, boolean defaultFormat) {
+    String body = render(engine, user, text, sharesDestination);
+    Double confidence = confidence(group);
+    String suffix = confidence == null ? "" : " (" + Math.round(confidence * 100) + "%)";
+    int maxBodyLength = 2000 - suffix.length();
+    if (body.length() > maxBodyLength) {
+      body = defaultFormat ? body.substring(0, maxBodyLength - 1) + "`" : body.substring(0, maxBodyLength);
+    }
+    return body + suffix;
+  }
+
+  private static Double confidence(Group group) {
+    if (!group.stableScoreAvailable || !group.activeText.isEmpty() && !group.activeScoreAvailable) return null;
+    int tokenCount = group.stableScoredTokenCount + group.activeScoredTokenCount;
+    if (tokenCount == 0) return null;
+    double logProbabilitySum = group.stableLogProbabilitySum + group.activeLogProbabilitySum;
+    double score = Math.exp(logProbabilitySum / tokenCount);
+    return Double.isFinite(score) ? Math.max(0, Math.min(1, score)) : null;
   }
 
   /** Display names are user-controlled: neutralise Markdown (formatting, masked links, headings) in them. */
@@ -343,8 +372,16 @@ final class Transcripts {
     if (!text.isEmpty() && (group.activeUtteranceId == null || !group.activeUtteranceId.equals(id))) {
       group.activeUtteranceId = id;
       group.activeText = "";
+      group.activeLogProbabilitySum = 0;
+      group.activeScoredTokenCount = 0;
+      group.activeScoreAvailable = false;
     }
-    if (!text.isEmpty()) group.activeText = text;
+    if (!text.isEmpty()) {
+      group.activeText = text;
+      group.activeLogProbabilitySum = d.logProbabilitySum();
+      group.activeScoredTokenCount = d.scoredTokenCount();
+      group.activeScoreAvailable = d.scoredTokenCount() > 0 && Double.isFinite(d.logProbabilitySum());
+    }
 
     boolean defaultFormat = c.messageFormat().equals(Config.DEFAULT_MESSAGE_FORMAT);
     String user = defaultFormat ? escapeCodeSpan(u.name) : escapeName(u.name);
@@ -354,17 +391,32 @@ final class Transcripts {
       String pendingTranscript = defaultFormat ? escapeCodeSpan(pendingText) : pendingText;
       String pendingBody = render(engine, user, pendingTranscript, sharesDestination);
       if (pendingBody.length() > 2000 && !group.stableText.isEmpty()) {
-        group = new Group();
-        group.activeText = text;
-        group.activeUtteranceId = fin ? null : id;
-        m.group = group;
-        displayGroups.put(new GroupKey(u.guildId, u.userId, engine, channelId), group);
+        Group split = new Group();
+        split.activeText = text;
+        split.activeLogProbabilitySum = d.logProbabilitySum();
+        split.activeScoredTokenCount = d.scoredTokenCount();
+        split.activeScoreAvailable = d.scoredTokenCount() > 0 && Double.isFinite(d.logProbabilitySum());
+        split.activeUtteranceId = fin ? null : id;
+        group = split;
+        m.group = split;
+        displayGroups.put(new GroupKey(u.guildId, u.userId, engine, channelId), split);
       }
     }
 
     if (fin) {
-      if (!text.isEmpty()) group.stableText = joinText(group.stableText, group.activeText);
+      if (!text.isEmpty()) {
+        group.stableText = joinText(group.stableText, group.activeText);
+        if (group.activeScoreAvailable) {
+          group.stableLogProbabilitySum += group.activeLogProbabilitySum;
+          group.stableScoredTokenCount += group.activeScoredTokenCount;
+        } else {
+          group.stableScoreAvailable = false;
+        }
+      }
       group.activeText = "";
+      group.activeLogProbabilitySum = 0;
+      group.activeScoredTokenCount = 0;
+      group.activeScoreAvailable = false;
       group.activeUtteranceId = null;
       group.lastFinalAt = d.createdAt();
     }
@@ -383,8 +435,7 @@ final class Transcripts {
     }
 
     String transcript = defaultFormat ? escapeCodeSpan(combined) : combined;
-    String body = render(engine, user, transcript, sharesDestination);
-    if (body.length() > 2000) body = defaultFormat ? body.substring(0, 1999) + "`" : body.substring(0, 2000);
+    String body = renderMessage(engine, user, transcript, sharesDestination, group, defaultFormat);
 
     Group currentGroup = group;
     currentGroup.inflight = true;

@@ -42,7 +42,7 @@ Discord 上で、文字起こしを投稿したいテキストチャンネルで
 
 コマンドはいずれも「サーバーの管理」権限が必要です。未登録のサーバーには参加も録音もしません。
 
-投稿は既定で `` `ユーザー名`: `発言` `` の形式です。同じ投稿先 channel を共有する複数の engine は、`MESSAGE_FORMAT` に `{engine}` がなければ、区別できるよう先頭に `[engine 名]` が付きます。engine ごとに別 channel へ投稿する場合は channel で区別できるため、自動の engine 名は付きません。`MESSAGE_FORMAT` に `{engine}` を指定すると、別 channel への投稿でも設定した位置に engine 名を表示できます。本番運用では engine を 1 つにしてください。
+投稿は既定で `` `ユーザー名`: `発言` `` の形式です。Reazon transducer (`reazon-ja`、`reazon-ja-en`) でスコアを取得できる場合は、投稿末尾に `(nnn%)` が付きます。この値は認識 token の平均確率から計算した参考スコアで、発話が正しい確率ではありません。他の engine やスコアを返さない結果には付きません。同じ投稿先 channel を共有する複数の engine は、`MESSAGE_FORMAT` に `{engine}` がなければ、区別できるよう先頭に `[engine 名]` が付きます。engine ごとに別 channel へ投稿する場合は channel で区別できるため、自動の engine 名は付きません。`MESSAGE_FORMAT` に `{engine}` を指定すると、別 channel への投稿でも設定した位置に engine 名を表示できます。本番運用では engine を 1 つにしてください。
 
 同じユーザーの発話が 1.2 秒以内に続いた場合は、同じ engine と投稿先 channel の範囲で 1 つのメッセージにまとめます。話者、engine、投稿先 channel が異なる発話はまとめません。結合後のメッセージが Discord の 2,000 文字上限を超える場合は別メッセージに分けます。
 
@@ -106,7 +106,8 @@ Discord 上で、文字起こしを投稿したいテキストチャンネルで
 ## 開発
 
 ```sh
-scripts/install-sherpa.sh   # 初回のみ: sherpa-onnx は Maven Central に無いため、リリースの jar を ~/.m2 に入れます
+sudo apt-get install build-essential cmake git
+scripts/install-sherpa.sh   # 初回と、既存環境をこの変更へ更新した後に実行: token score 対応の Java/JNI binding を ~/.m2 に入れます
 mvn test      # PipelineTest は data/models に sensevoice と test_silero_vad.wav、UserPipelineTest は silero_vad.onnx と test_silero_vad.wav があるときだけ実行されます(wav は音声を含む 16 kHz モノラル 16-bit の WAV を自分で置きます)
 mvn package   # target/koemoji.jar
 ```

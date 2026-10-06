@@ -1,7 +1,11 @@
 FROM maven:3.10.0-eclipse-temurin-25@sha256:721fefa7187746ff892b2a178eb4cac3292f89a80f76ef25c04da655f88619b8 AS build
 WORKDIR /src
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential=12.10ubuntu1 cmake=3.28.3-1build7 git=1:2.43.0-1ubuntu7.3 \
+    && rm -rf /var/lib/apt/lists/*
 COPY pom.xml .
 COPY scripts/install-sherpa.sh scripts/install-sherpa.sh
+COPY scripts/sherpa-confidence.patch scripts/sherpa-confidence.patch
 RUN scripts/install-sherpa.sh
 COPY src src
 RUN mvn -q -B package -DskipTests

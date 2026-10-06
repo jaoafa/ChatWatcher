@@ -69,15 +69,25 @@ public final class SherpaEngine implements AsrEngine {
   }
 
   @Override public Capabilities capabilities() { return new Capabilities(name, false, 30, true); }
-  @Override public String recognizePartial(float[] s) { return run(s); }
-  @Override public String recognizeFinal(float[] s) { return run(s); }
+  @Override public Result recognizePartial(float[] s) { return run(s); }
+  @Override public Result recognizeFinal(float[] s) { return run(s); }
 
-  private String run(float[] samples) {
+  private Result run(float[] samples) {
     OfflineStream st = rec.createStream();
     try {
       st.acceptWaveform(samples, 16000);
       rec.decode(st);
-      return rec.getResult(st).getText().strip();
+      var result = rec.getResult(st);
+      float[] logProbabilities = result.getYsLogProbs();
+      if (logProbabilities.length != result.getTokens().length || logProbabilities.length == 0) {
+        return new Result(result.getText().strip(), 0, 0);
+      }
+      double sum = 0;
+      for (float logProbability : logProbabilities) {
+        if (!Float.isFinite(logProbability)) return new Result(result.getText().strip(), 0, 0);
+        sum += logProbability;
+      }
+      return new Result(result.getText().strip(), sum, logProbabilities.length);
     } finally { st.release(); }
   }
 
