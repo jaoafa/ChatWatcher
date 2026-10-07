@@ -83,7 +83,8 @@ jobs:
     with:
       targets: >-
         [
-          { imageName: "${{ github.repository }}", context: ".", file: "Dockerfile", packageName: "${{ github.event.repository.name }}" }
+          { imageName: "${{ github.repository }}", context: ".", file: "Dockerfile", packageName: "${{ github.event.repository.name }}" },
+          { imageName: "${{ github.repository }}-updater", context: ".", file: "updater/Dockerfile", packageName: "${{ github.event.repository.name }}-updater" }
         ]
       # sherpa-onnx native libs are linux-x64 only
       platforms: linux/amd64

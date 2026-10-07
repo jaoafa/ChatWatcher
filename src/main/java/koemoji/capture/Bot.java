@@ -42,10 +42,27 @@ public final class Bot extends ListenerAdapter {
   private final ScheduledExecutorService sched = Executors.newScheduledThreadPool(2);
   private volatile JDA jda;
   private volatile Transcripts transcripts;
+  private volatile boolean draining;
+  private volatile boolean drainSucceeded = true;
 
   public Bot(Config c, Db db) { this.c = c; this.db = db; }
 
   public boolean connected() { return jda != null && jda.getStatus() == JDA.Status.CONNECTED; }
+  public long activePipelines() { return handlers.values().stream().mapToLong(Handler::size).sum(); }
+  public long transcriptInflight() { return transcripts == null ? 0 : transcripts.inflightCount(); }
+  public boolean drainSucceeded() { return drainSucceeded; }
+
+  public synchronized void beginDrain() {
+    draining = true;
+    boolean succeeded = true;
+    for (Handler handler : handlers.values()) succeeded &= handler.drain();
+    if (!succeeded) drainSucceeded = false;
+  }
+
+  public synchronized void resumeDrain() {
+    handlers.values().forEach(Handler::resume);
+    draining = false;
+  }
 
   public void start() throws InterruptedException {
     jda = JDABuilder.createLight(c.token(), GatewayIntent.GUILD_VOICE_STATES)
@@ -89,6 +106,7 @@ public final class Bot extends ListenerAdapter {
   @Override public void onSlashCommandInteraction(SlashCommandInteractionEvent e) {
     Guild g = e.getGuild();
     if (g == null) return;
+    if (draining) { e.reply("The bot is updating; try again shortly.").setEphemeral(true).queue(); return; }
     switch (e.getName()) {
       case "register" -> {
         var opt = e.getOption("channel");
@@ -180,9 +198,10 @@ public final class Bot extends ListenerAdapter {
   @Override public void onGuildVoiceUpdate(GuildVoiceUpdateEvent e) {
     Guild g = e.getGuild();
     if (e.getMember().getUser().isBot()) {
-      if (e.getMember().equals(g.getSelfMember()) && e.getChannelJoined() == null) disconnect(g);
+      if (!draining && e.getMember().equals(g.getSelfMember()) && e.getChannelJoined() == null) disconnect(g);
       return;
     }
+    if (draining) return;
     if (!db.hasRoutes(g.getIdLong())) return;
     AudioChannel from = e.getChannelLeft(), to = e.getChannelJoined(), cur = g.getSelfMember().getVoiceState().getChannel();
     switch (decide(cur != null, cur != null && from != null && from.getIdLong() == cur.getIdLong(),
@@ -198,12 +217,14 @@ public final class Bot extends ListenerAdapter {
     private final Guild guild;
     private final Map<Long, UserPipeline> users = new ConcurrentHashMap<>();
     private final Map<Long, String> usernames = new ConcurrentHashMap<>();
+    private boolean accepting = true;
 
     Handler(Guild g) { this.guild = g; }
 
     @Override public boolean canReceiveUser() { return true; }
 
-    @Override public void handleUserAudio(UserAudio ua) {
+    @Override public synchronized void handleUserAudio(UserAudio ua) {
+      if (!accepting) return;
       var user = ua.getUser();
       if (user.isBot() && !c.includeBots()) return;
       long uid = user.getIdLong();
@@ -223,11 +244,18 @@ public final class Bot extends ListenerAdapter {
         return true;
       });
     }
-    void close() {
-      users.values().forEach(p -> {
-        try { p.close(); } catch (Throwable t) { log.warn("close failed", t); }  // the remaining users must still be closed
-      });
+    synchronized boolean drain() {
+      accepting = false;
+      boolean succeeded = true;
+      for (UserPipeline p : users.values()) {
+        try { succeeded &= p.closeForDrain(); }
+        catch (Throwable t) { succeeded = false; log.warn("close failed", t); }  // the remaining users must still be closed
+      }
       users.clear();
+      return succeeded;
     }
+    synchronized void resume() { accepting = true; }
+    long size() { return users.size(); }
+    void close() { drain(); }
   }
 }

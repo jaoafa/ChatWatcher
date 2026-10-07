@@ -6,6 +6,7 @@ import koemoji.queue.Db;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
 import java.util.function.BooleanSupplier;
 
@@ -14,7 +15,7 @@ final class Ops {
   private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Ops.class);
   private final HttpServer server;
 
-  Ops(Config c, Db db, BooleanSupplier discordConnected) throws IOException {
+  Ops(Config c, Db db, BooleanSupplier discordConnected, UpdateDrain drain) throws IOException {
     server = HttpServer.create(new InetSocketAddress(c.healthPort()), 0);
     server.createContext("/health", ex -> {
       String problem = null;
@@ -33,6 +34,27 @@ final class Ops {
       }
       reply(ex, 200, body);
     });
+    server.createContext("/update/status", ex -> {
+      if (!authorized(ex, c.updateSecret())) { reply(ex, 401, "unauthorized\n"); return; }
+      var status = drain.status();
+      String body = "{\"phase\":\"" + status.phase() + "\",\"pendingJobs\":" + status.pendingJobs()
+          + ",\"unappliedResults\":" + status.unappliedResults() + ",\"transcriptInflight\":" + status.transcriptInflight()
+          + ",\"activeWorkers\":" + status.activeWorkers() + ",\"activePipelines\":" + status.activePipelines() + "}\n";
+      reply(ex, 200, body, "application/json; charset=utf-8");
+    });
+    server.createContext("/update/drain", ex -> {
+      if (!authorized(ex, c.updateSecret())) { reply(ex, 401, "unauthorized\n"); return; }
+      if (!"POST".equals(ex.getRequestMethod())) { reply(ex, 405, "method not allowed\n"); return; }
+      drain.begin();
+      reply(ex, 202, "accepted\n");
+    });
+    server.createContext("/update/cancel", ex -> {
+      if (!authorized(ex, c.updateSecret())) { reply(ex, 401, "unauthorized\n"); return; }
+      if (!"POST".equals(ex.getRequestMethod())) { reply(ex, 405, "method not allowed\n"); return; }
+      drain.cancel();
+      reply(ex, 200, "cancelled\n");
+    });
+    if (c.updateSecret().isBlank()) log.warn("Automatic updates are disabled because UPDATE_CONTROL_SECRET is empty");
     server.start();
   }
 
@@ -59,8 +81,19 @@ final class Ops {
   }
 
   private static void reply(com.sun.net.httpserver.HttpExchange ex, int code, String body) throws IOException {
+    reply(ex, code, body, "text/plain; charset=utf-8");
+  }
+
+  private static void reply(com.sun.net.httpserver.HttpExchange ex, int code, String body, String contentType) throws IOException {
     byte[] b = body.getBytes(StandardCharsets.UTF_8);
+    ex.getResponseHeaders().set("Content-Type", contentType);
     ex.sendResponseHeaders(code, b.length);
     try (var o = ex.getResponseBody()) { o.write(b); }
+  }
+
+  private static boolean authorized(com.sun.net.httpserver.HttpExchange ex, String secret) {
+    if (secret == null || secret.isBlank()) return false;
+    String supplied = ex.getRequestHeaders().getFirst("X-Koemoji-Update-Secret");
+    return supplied != null && MessageDigest.isEqual(secret.getBytes(StandardCharsets.UTF_8), supplied.getBytes(StandardCharsets.UTF_8));
   }
 }

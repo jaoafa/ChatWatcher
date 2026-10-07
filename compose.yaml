@@ -1,5 +1,8 @@
+name: koemoji
+
 services:
   koemoji:
+    image: ${KOEMOJI_IMAGE:-ghcr.io/jaoafa/koemoji:latest}
     build: .
     restart: unless-stopped
     env_file: .env
@@ -7,10 +10,42 @@ services:
       driver: json-file
       options: {max-size: 10m, max-file: "3"}
     environment:
-      MODE: all
+      MODE: ${MODE:-all}
+      UPDATE_CONTROL_SECRET: ${UPDATE_CONTROL_SECRET:-}
+      HEALTH_PORT: 8080
       # engine defaults to sensevoice; set ASR_ENGINES=a,b to compare several (see README)
       ASR_THREADS: 2
       ASR_LANGUAGE: ja
       ASR_PAD_MS: 300
     volumes:
       - ./data:/data
+    labels:
+      io.koemoji.autoupdate: "true"
+    expose:
+      - "8080"
+    networks:
+      - update-control
+
+  updater:
+    image: ghcr.io/jaoafa/koemoji-updater:latest
+    build:
+      context: .
+      dockerfile: updater/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - koemoji
+    environment:
+      UPDATE_CONTROL_SECRET: ${UPDATE_CONTROL_SECRET:-}
+      UPDATER_PROJECT_DIR: ${PWD}
+      UPDATER_COMPOSE_FILE: ${PWD}/compose.yaml
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${PWD}:${PWD}:ro
+      - ./data/update-state:/var/lib/koemoji-updater
+    working_dir: ${PWD}
+    networks:
+      - update-control
+      - default
+
+networks:
+  update-control: {}

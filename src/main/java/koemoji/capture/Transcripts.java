@@ -68,6 +68,8 @@ final class Transcripts {
 
   Transcripts(Config c, Db db, LongFunction<MessageChannel> channels) { this.c = c; this.db = db; this.channels = channels; }
 
+  long inflightCount() { return displayGroups.values().stream().filter(group -> group.inflight).count(); }
+
   /** Captures destination routes before the utterance's first job is enqueued. */
   void register(String utteranceId, long guildId, long userId, long startedAtMs, String userName) {
     var engines = new HashSet<>(c.engines());

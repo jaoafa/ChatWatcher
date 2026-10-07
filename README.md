@@ -17,7 +17,8 @@ Discord のボイスチャンネル文字起こし bot です。参加者ごと�
 ## 使い方
 
 ```sh
-echo 'DISCORD_TOKEN=...' > .env
+umask 077
+printf 'DISCORD_TOKEN=%s\nUPDATE_CONTROL_SECRET=%s\n' '取得した Bot token' "$(openssl rand -hex 32)" > .env
 docker compose up -d --build
 ```
 
@@ -51,6 +52,7 @@ Discord 上で、文字起こしを投稿したいテキストチャンネルで
 | 変数 | 既定値 | 説明 |
 |---|---|---|
 | `DISCORD_TOKEN` | (必須) | Bot のトークン |
+| `UPDATE_CONTROL_SECRET` | (空) | updater とアプリ間の更新制御 API 認証に使う共有 secret。空の場合は自動更新を無効にします |
 | `MODE` | `all` | `all`、`capture`、`worker` のいずれか。分けるとワーカーだけをスケールできます。両者は `QUEUE_DB` と `AUDIO_DIR` を共有します |
 | `ASR_ENGINES` | `sensevoice` | すべての発話を送るエンジン(カンマ区切り) |
 | `MESSAGE_FORMAT` | `` `{user}`: `{text}` `` | 投稿メッセージの書式。`{user}`、`{text}`、`{engine}` が使えます。同じ投稿先 channel を使う engine が複数あり、書式に `{engine}` が無い場合は先頭に `[engine 名] ` が付きます |
@@ -102,6 +104,9 @@ Discord 上で、文字起こしを投稿したいテキストチャンネルで
 - `/metrics` は Prometheus 形式で、`koemoji_jobs{engine,status}`(キューの深さと結果)、`koemoji_workers_alive`、エンジンごとの認識回数と所要時間を返します。
 - 起動時に、未知のエンジン名は即エラーになります。`MODE=all` では、ワーカーのないエンジンもエラーです。`MODE=capture` ではワーカー側が分からないため、ワーカーコンテナの `WORKER_ENGINES` が `ASR_ENGINES` を網羅するようにしてください。
 - ユーザー別の音声パイプライン(VAD)は、音声が 5 分途切れると解放されます。
+- `updater` は GitHub Releases の stable version を 10 分ごとに確認し、latest tag を使うアプリ service だけを更新します。version 固定や digest 固定の service は対象外です。更新前に音声・キュー・Discord 投稿を drain し、更新後の health check に失敗した場合は直前の image に戻します。drain が 60 秒以内に完了しない場合は更新を中止します。
+- 発話の final enqueue に失敗した場合もコンテナを置換せず、プロセスが稼働している間は自動更新を停止します。DB の状態とログを確認してから koemoji コンテナを再起動すると、更新制御が再び有効になります。
+- updater は Docker socket と Compose 設定を読み取り専用で mount します。Docker socket はホスト上の root 相当の操作権限を与え、Compose 設定には `.env` の Discord token が含まれます。信頼できる管理者だけがホストと Compose 設定を変更できる環境で実行してください。`UPDATE_CONTROL_SECRET` は推測困難な値を `.env` に保存し、ファイル権限を制限してください。
 
 ## 開発
 

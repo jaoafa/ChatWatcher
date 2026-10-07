@@ -24,12 +24,23 @@ public final class Models {
   private Models() {}
 
   public static void ensure(Config c) {
+    ensureCapture(c);
+    ensureWorkers(c);
+  }
+
+  public static void ensureCapture(Config c) {
     try {
       Files.createDirectories(c.modelsDir());
       if (c.capture()) fetchFile(c.vadModel());
-      var engines = new TreeSet<String>();
-      if (c.worker()) engines.addAll(c.workerEngines());
-      for (String e : engines) fetchArchive(c, e);
+    } catch (IOException e) {
+      throw new IllegalStateException("model download failed: " + e.getMessage(), e);
+    }
+  }
+
+  public static void ensureWorkers(Config c) {
+    try {
+      Files.createDirectories(c.modelsDir());
+      if (c.worker()) for (String engine : new TreeSet<>(c.workerEngines())) fetchArchive(c, engine);
     } catch (IOException e) {
       throw new IllegalStateException("model download failed: " + e.getMessage(), e);
     }

@@ -11,7 +11,11 @@ COPY src src
 RUN mvn -q -B package -DskipTests
 
 FROM eclipse-temurin:25.0.4.1_1-jre@sha256:fcd7fd7b387f94bb2ac461478a7436ad8e349924c374ea8313919624dceae636
+ARG APPLICATION_VERSION=0.0.0
+ARG GIT_REVISION=unknown
 COPY --from=build /src/target/koemoji.jar /app/koemoji.jar
+LABEL org.opencontainers.image.version=$APPLICATION_VERSION \
+      org.opencontainers.image.revision=$GIT_REVISION
 # models are downloaded on first start into /data/models (persisted with the /data volume)
 ENV MODELS_DIR=/data/models VAD_MODEL=/data/models/silero_vad.onnx AUDIO_DIR=/data/audio QUEUE_DB=/data/queue.db
 HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 \

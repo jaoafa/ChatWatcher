@@ -14,7 +14,7 @@ public record Config(
     int partialMs, int maxUtteranceMs, int audioTtlMin, int failedAudioTtlMin,
     float vadThreshold, int vadStartMs, int vadEndSilenceMs, int minUtteranceMs, int prerollMs,
     int retryMax, int retryBackoffMs, String language, int padMs, boolean includeBots, int healthPort,
-    String messageFormat) {
+    String messageFormat, String updateSecret) {
 
   public static final String DEFAULT_MESSAGE_FORMAT = "`{user}`: `{text}`";
 
@@ -43,7 +43,7 @@ public record Config(
         i.applyAsInt("VAD_PREROLL_MS", 320), i.applyAsInt("RETRY_MAX", 5), i.applyAsInt("RETRY_BACKOFF_MS", 2000),
         s.apply("ASR_LANGUAGE", "ja"), i.applyAsInt("ASR_PAD_MS", 0),
         Boolean.parseBoolean(s.apply("INCLUDE_BOTS", "true")), i.applyAsInt("HEALTH_PORT", 8080),
-        s.apply("MESSAGE_FORMAT", DEFAULT_MESSAGE_FORMAT));
+        s.apply("MESSAGE_FORMAT", DEFAULT_MESSAGE_FORMAT), s.apply("UPDATE_CONTROL_SECRET", ""));
   }
 
   private static float parseFloat(String key, String v) {

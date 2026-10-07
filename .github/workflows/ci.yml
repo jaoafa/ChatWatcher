@@ -29,6 +29,7 @@ jobs:
           java-version: 25
           distribution: temurin
           cache: maven
+      - run: python3 -m unittest discover -s updater/tests
       - run: scripts/install-sherpa.sh
       # PipelineTest and UserPipelineTest are skipped here because they need the models and a speech wav under data/models
       - run: mvn -B verify

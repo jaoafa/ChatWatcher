@@ -48,6 +48,7 @@ public final class UserPipeline implements Closeable {
   private int rev;
   private long lastPartialMs, lastAudioMs;
   private boolean closed;
+  private boolean finalizationSucceeded = true;
 
   public UserPipeline(Config c, Db db, String name, Consumer<String> onUtterance) {
     this(c, db, name, onUtterance, silero(c));
@@ -153,23 +154,26 @@ public final class UserPipeline implements Closeable {
       else path.toFile().delete();
     } catch (RuntimeException ex) {
       log.warn("could not enqueue a final for utterance {}", utt, ex);
+      finalizationSucceeded = false;
     } finally {
       utt = null; speechRun = 0;
       vad.reset();
     }
   }
 
-  private void finish() {
-    try { out.close(); } catch (IOException e) { abort(e); return; }
+  private boolean finish() {
+    try { out.close(); } catch (IOException e) { abort(e); finalizationSucceeded = false; return false; }
     try {
       if (bytes < c.minUtteranceMs() * 32L) path.toFile().delete();
       else enqueueAll(true);
     } catch (RuntimeException e) {
-      log.warn("enqueue failed; dropping utterance {}", utt, e);  // file is left for the TTL/orphan sweep
+      log.warn("enqueue failed; dropping utterance {}", utt, e);
+      finalizationSucceeded = false;
     } finally {
       utt = null; speechRun = 0;
       vad.reset();
     }
+    return finalizationSucceeded;
   }
 
   /** One job per configured engine (shadow comparison); revision is shared across engines. */
@@ -197,10 +201,15 @@ public final class UserPipeline implements Closeable {
   }
 
   @Override public synchronized void close() {
-    if (closed) return;
+    closeForDrain();
+  }
+
+  synchronized boolean closeForDrain() {
+    if (closed) return finalizationSucceeded;
     closed = true;
     try { if (utt != null) finish(); }
     finally { vad.release(); }
+    return finalizationSucceeded;
   }
 
   interface VadDetector {
