@@ -11,6 +11,7 @@ import java.nio.file.*;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -23,25 +24,36 @@ public final class Worker {
   /** Per "engine|final|partial": [jobs, nanoseconds spent recognizing]. */
   private static final Map<String, long[]> stats = new ConcurrentHashMap<>();
 
+  private final AtomicBoolean acceptingClaims = new AtomicBoolean(true);
+  private final AtomicInteger activeJobs = new AtomicInteger();
+
+  private Worker() {}
+
   public static int alive() { return alive.get(); }
   public static Map<String, long[]> stats() { return stats; }
 
-  public static void start(Config c, Db db) {
+  public static Worker start(Config c, Db db) {
+    Worker worker = new Worker();
     String host = System.getenv().getOrDefault("HOSTNAME", "local") + "-" + ProcessHandle.current().pid();
     // Engines are built here, before any thread starts, so a missing/invalid model fails the process at startup
     // (and the restart policy applies) instead of silently killing one worker thread.
     for (int i = 0; i < c.workerEngines().size(); i++) {
       String id = host + "-" + i, name = c.workerEngines().get(i);
       AsrEngine engine = AsrEngine.create(name, c);
-      Thread.ofPlatform().daemon().name("asr-" + name + "-" + i).start(() -> loop(c, db, id, name, engine));
+      Thread.ofPlatform().daemon().name("asr-" + name + "-" + i).start(() -> worker.loop(c, db, id, name, engine));
     }
     var reaper = Executors.newSingleThreadScheduledExecutor(r -> Thread.ofPlatform().daemon().name("reaper").unstarted(r));
     reaper.scheduleWithFixedDelay(() -> {
       try { reap(c, db); } catch (Throwable t) { log.warn("reaper failed", t); }  // an Error would silently cancel the schedule
     }, 10, 30, TimeUnit.SECONDS);
+    return worker;
   }
 
-  private static void loop(Config c, Db db, String id, String engineName, AsrEngine engine) {
+  public void stopClaims() { acceptingClaims.set(false); }
+  public void resumeClaims() { acceptingClaims.set(true); }
+  public boolean isIdle() { return activeJobs.get() == 0; }
+
+  private void loop(Config c, Db db, String id, String engineName, AsrEngine engine) {
     boolean up = false;
     long backoff = 1000;
     try (engine) {
@@ -50,9 +62,12 @@ public final class Worker {
       up = true;
       while (!Thread.currentThread().isInterrupted()) {
         try {
+          if (!acceptingClaims.get()) { Thread.sleep(100); continue; }
           var job = db.claim(id, engineName);
           if (job.isEmpty()) { Thread.sleep(100); continue; }
-          run(c, db, id, engine, engineName, job.get());
+          activeJobs.incrementAndGet();
+          try { run(c, db, id, engine, engineName, job.get()); }
+          finally { activeJobs.decrementAndGet(); }
           backoff = 1000;
         } catch (InterruptedException e) {
           throw e;

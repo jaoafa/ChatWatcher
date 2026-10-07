@@ -10,17 +10,18 @@ public final class Main {
   public static void main(String[] args) throws Exception {
     Config c = Config.fromEnv();
     validate(c);
-    Models.ensure(c);
     Db db = new Db(c);
-    if (c.worker()) Worker.start(c, db);
     Bot bot = null;
     if (c.capture()) {
+      Models.ensureCapture(c);
       if (c.token() == null || c.token().isBlank()) throw new IllegalStateException("DISCORD_TOKEN is required");
       bot = new Bot(c, db);
       bot.start();
     }
+    Models.ensureWorkers(c);
+    Worker worker = c.worker() ? Worker.start(c, db) : null;
     Bot b = bot;
-    if (c.healthPort() > 0) new Ops(c, db, () -> b != null && b.connected());
+    if (c.healthPort() > 0) new Ops(c, db, () -> b != null && b.connected(), new UpdateDrain(db, bot, worker));
     Thread.currentThread().join();
   }
 

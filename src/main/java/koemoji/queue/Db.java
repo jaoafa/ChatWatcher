@@ -248,6 +248,22 @@ public final class Db {
     });
   }
 
+  public long pendingJobCount() {
+    return tx(c -> {
+      try (var s = c.createStatement(); var r = s.executeQuery("SELECT COUNT(*) FROM jobs WHERE status IN ('queued','processing')")) {
+        return r.next() ? r.getLong(1) : 0;
+      }
+    });
+  }
+
+  public long unappliedResultCount() {
+    return tx(c -> {
+      try (var s = c.createStatement(); var r = s.executeQuery("SELECT COUNT(*) FROM jobs WHERE applied=0 AND status IN ('completed','failed')")) {
+        return r.next() ? r.getLong(1) : 0;
+      }
+    });
+  }
+
   public boolean knowsPath(String path) {
     return tx(c -> {
       try (var p = c.prepareStatement("SELECT 1 FROM jobs WHERE audio_path=? LIMIT 1")) {
